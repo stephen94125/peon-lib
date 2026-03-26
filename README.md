@@ -254,4 +254,4 @@ cargo test
 
 ## License
 
-Apache 2.0
+This project is dual-licensed under either the [MIT license](LICENSE-MIT) or the [Apache License, Version 2.0](LICENSE-APACHE), at your option.
