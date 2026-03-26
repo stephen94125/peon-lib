@@ -123,7 +123,7 @@ INFO  scanner      Scanning for skills in '.skills/' (max depth: 4)
 DEBUG scanner      Loaded skill 'roll-dice' from '.skills/roll-dice/SKILL.md'
 INFO  scanner      Scan complete: found 2 skill(s)
 
-INFO  agent        User input: 幫我擲一顆 20 面骰
+INFO  agent        User input: Roll a 20-sided die
 
 DEBUG tools        read_file definition: 0 path(s) in whitelist     ← locked
 DEBUG tools        execute_script definition: 0 path(s) in whitelist ← locked
@@ -142,7 +142,7 @@ INFO  tools        Execute access granted for: .../roll.sh
 DEBUG tools        Resolved interpreter: 'bash'
 DEBUG tools        exit_code=0, stdout_len=1
 
-INFO  agent        Agent response: 你擲出了 4。
+INFO  agent        Agent response: rolled a 4.
 
 INFO  scanner      Session reset — all whitelists cleared
 ```

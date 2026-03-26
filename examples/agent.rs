@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
     // ================================================================
     // Send a test prompt
     // ================================================================
-    let user_input = "幫我擲一顆 20 面骰";
+    let user_input = "Roll a 20-sided die";
     log::info!("User input: {}", user_input);
 
     let response = agent.prompt(user_input).await?;
