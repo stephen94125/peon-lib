@@ -1,6 +1,9 @@
+use crate::enforcer::FileEnforcer;
+use regex::Regex;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::fs;
 
@@ -16,7 +19,7 @@ struct SkillFrontmatter {
 }
 
 /// Complete metadata of a skill, ready for prompt injection.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkillMeta {
     pub name: String,
     pub description: String,
@@ -52,7 +55,10 @@ const MAX_DIRS: usize = 2000;
 /// - `location` is always an absolute path.
 ///
 /// The spec recommends `max_depth` of 4–6; pass `None` to use the default of 4.
-pub async fn scan_skills(base_dir: &str, max_depth: Option<usize>) -> anyhow::Result<Vec<SkillMeta>> {
+pub async fn scan_skills(
+    base_dir: &str,
+    max_depth: Option<usize>,
+) -> anyhow::Result<Vec<SkillMeta>> {
     let depth = max_depth.unwrap_or(4);
 
     // Resolve to an absolute path so `location` fields are always absolute.
@@ -356,6 +362,214 @@ fn escape_xml(s: &str) -> String {
 }
 
 // ==========================================
+// Regex path scanning (Phase 2)
+// ==========================================
+
+/// Extracts all path-like strings from text using a lenient regex.
+///
+/// Matches patterns like `./scripts/extract.py`, `references/api.md`, etc.
+/// Returns a de-duplicated, order-preserving list.
+pub fn scan_paths_in_content(content: &str) -> Vec<String> {
+    let re = Regex::new(r"(?:\./)?(?:[\w.-]+/)+[\w.-]+(?:\.\w+)?").unwrap();
+    let mut seen = HashSet::new();
+    let mut paths = Vec::new();
+
+    for mat in re.find_iter(content) {
+        let path = mat.as_str().to_string();
+        if seen.insert(path.clone()) {
+            paths.push(path);
+        }
+    }
+
+    paths
+}
+
+// ==========================================
+// PeonEngine — dynamic whitelist manager
+// ==========================================
+
+/// The core engine that manages dynamic path whitelists for tools.
+///
+/// After a skill's SKILL.md is read, the engine scans its content for
+/// path-like strings, resolves them to absolute paths relative to the
+/// skill's directory, checks existence and permissions, then appends
+/// valid paths to the read/execute whitelists.
+pub struct PeonEngine {
+    enforcer: Arc<FileEnforcer>,
+    known_read_paths: HashSet<String>,
+    known_execute_paths: HashSet<String>,
+}
+
+impl PeonEngine {
+    pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
+        Self {
+            enforcer,
+            known_read_paths: HashSet::new(),
+            known_execute_paths: HashSet::new(),
+        }
+    }
+
+    /// Scans skill content for paths, resolves them relative to `skill_base_dir`,
+    /// checks existence + permissions, and appends to whitelists.
+    pub async fn process_skill_content(
+        &mut self,
+        agent_id: &str,
+        skill_base_dir: &Path,
+        content: &str,
+    ) {
+        let raw_paths = scan_paths_in_content(content);
+
+        for raw_path in &raw_paths {
+            // Resolve relative paths against the skill's directory
+            let absolute = skill_base_dir.join(raw_path);
+            let resolved = absolute.canonicalize().unwrap_or(absolute.clone());
+            let resolved_str = resolved.to_string_lossy().to_string();
+
+            // 1. Existence check
+            if fs::metadata(&resolved).await.is_err() {
+                println!(
+                    "  ⚠️  [PeonEngine] Path '{}' (resolved: '{}') does not exist — skipping.",
+                    raw_path,
+                    resolved.display()
+                );
+                continue;
+            }
+
+            // 2. Permission checks & dynamic routing
+            if self.enforcer.enforce(agent_id, "read", &resolved_str).await {
+                if self.known_read_paths.insert(resolved_str.clone()) {
+                    println!(
+                        "  📖 [PeonEngine] Added to read whitelist: {}",
+                        resolved_str
+                    );
+                }
+            }
+
+            if self
+                .enforcer
+                .enforce(agent_id, "execute", &resolved_str)
+                .await
+            {
+                if self.known_execute_paths.insert(resolved_str.clone()) {
+                    println!(
+                        "  ⚡ [PeonEngine] Added to execute whitelist: {}",
+                        resolved_str
+                    );
+                }
+            }
+        }
+    }
+
+    /// Clears all whitelists (Phase 4: Context Sliding).
+    pub fn reset_session(&mut self) {
+        self.known_read_paths.clear();
+        self.known_execute_paths.clear();
+        println!("🔄 [PeonEngine] Session reset — all whitelists cleared.");
+    }
+
+    /// Returns a sorted snapshot of the current read whitelist.
+    pub fn read_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self.known_read_paths.iter().cloned().collect();
+        paths.sort();
+        paths
+    }
+
+    /// Returns a sorted snapshot of the current execute whitelist.
+    pub fn execute_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self.known_execute_paths.iter().cloned().collect();
+        paths.sort();
+        paths
+    }
+
+    /// Generates the dynamic Tool JSON Schema array for the current turn.
+    ///
+    /// The `read_file` tool's `path` parameter gets an `enum` constraint
+    /// from `known_read_paths`, and `execute_script` gets one from
+    /// `known_execute_paths`. The `read_skill` tool's `skill_name` enum
+    /// is built from the provided skill catalog.
+    pub fn generate_tool_schemas(&self, skills: &[SkillMeta]) -> serde_json::Value {
+        let skill_names: Vec<String> = skills.iter().map(|s| s.name.clone()).collect();
+        let read_paths = self.read_paths();
+        let execute_paths = self.execute_paths();
+
+        let mut tools = vec![
+            // read_skill — always present
+            serde_json::json!({
+                "name": "read_skill",
+                "description": "Read a skill's SKILL.md to get its instructions and available resources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "enum": skill_names,
+                            "description": "Name of the skill to read"
+                        }
+                    },
+                    "required": ["skill_name"]
+                }
+            }),
+        ];
+
+        // read_file — only present when whitelist is non-empty
+        if !read_paths.is_empty() {
+            tools.push(serde_json::json!({
+                "name": "read_file",
+                "description": "Read the contents of a pre-validated file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "enum": read_paths,
+                            "description": "Path to the file to read"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }));
+        }
+
+        // execute_script — only present when whitelist is non-empty
+        if !execute_paths.is_empty() {
+            tools.push(serde_json::json!({
+                "name": "execute_script",
+                "description": "Execute a pre-validated script with optional arguments.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "enum": execute_paths,
+                            "description": "Path to the script to execute"
+                        },
+                        "arguments": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional CLI arguments to pass to the script"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }));
+        }
+
+        // list_all_skills — always present
+        tools.push(serde_json::json!({
+            "name": "list_all_skills",
+            "description": "List all available skills with their names, descriptions, and locations.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }));
+
+        serde_json::json!(tools)
+    }
+}
+
+// ==========================================
 // Tests
 // ==========================================
 
@@ -517,7 +731,10 @@ mod tests {
         let skills = scan_skills(tmp.path().to_str().unwrap(), None)
             .await
             .unwrap();
-        assert!(skills.is_empty(), "skill without description must be skipped");
+        assert!(
+            skills.is_empty(),
+            "skill without description must be skipped"
+        );
     }
 
     #[tokio::test]
@@ -525,7 +742,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("broken-skill");
         tfs::create_dir_all(&dir).await.unwrap();
-        tfs::write(dir.join("SKILL.md"), "---\n: bad: yaml: [\n---\n").await.unwrap();
+        tfs::write(dir.join("SKILL.md"), "---\n: bad: yaml: [\n---\n")
+            .await
+            .unwrap();
 
         let skills = scan_skills(tmp.path().to_str().unwrap(), None)
             .await
@@ -561,8 +780,14 @@ mod tests {
             .await
             .unwrap();
         let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"top-skill"), "top-level skill must be found");
-        assert!(names.contains(&"nested-skill"), "nested skill must be found");
+        assert!(
+            names.contains(&"top-skill"),
+            "top-level skill must be found"
+        );
+        assert!(
+            names.contains(&"nested-skill"),
+            "nested skill must be found"
+        );
     }
 
     #[tokio::test]
@@ -595,7 +820,10 @@ mod tests {
             .unwrap();
         let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"shallow-skill"));
-        assert!(!names.contains(&"deep-skill"), "deep skill must not appear at depth=1");
+        assert!(
+            !names.contains(&"deep-skill"),
+            "deep skill must not appear at depth=1"
+        );
     }
 
     #[tokio::test]
@@ -646,5 +874,75 @@ mod tests {
             Path::new(&skills[0].location).is_absolute(),
             "location must be an absolute path"
         );
+    }
+
+    // ------------------------------------
+    // scan_paths_in_content unit tests
+    // ------------------------------------
+
+    #[test]
+    fn test_scan_paths_extracts_relative_paths() {
+        let content = r#"
+To process PDFs, run ./scripts/extract.py with the --format flag.
+See references/api.md for the full API documentation.
+Also check out tools/lint.sh for linting.
+"#;
+        let paths = scan_paths_in_content(content);
+        assert!(paths.contains(&"./scripts/extract.py".to_string()));
+        assert!(paths.contains(&"references/api.md".to_string()));
+        assert!(paths.contains(&"tools/lint.sh".to_string()));
+    }
+
+    #[test]
+    fn test_scan_paths_empty_for_no_paths() {
+        let content = "This is just plain text without any paths or file references.";
+        let paths = scan_paths_in_content(content);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_scan_paths_deduplicates() {
+        let content = r#"
+Run ./scripts/deploy.sh first.
+Then run ./scripts/deploy.sh again.
+"#;
+        let paths = scan_paths_in_content(content);
+        assert_eq!(
+            paths.iter().filter(|p| *p == "./scripts/deploy.sh").count(),
+            1,
+            "duplicate paths must be deduplicated"
+        );
+    }
+
+    #[test]
+    fn test_scan_paths_preserves_order() {
+        let content = "Use b/second.py then a/first.py";
+        let paths = scan_paths_in_content(content);
+        assert_eq!(paths[0], "b/second.py");
+        assert_eq!(paths[1], "a/first.py");
+    }
+
+    // ------------------------------------
+    // generate_tool_schemas unit tests
+    // ------------------------------------
+
+    #[test]
+    fn test_generate_tool_schemas_minimal() {
+        let enforcer = FileEnforcer::new();
+        let engine = PeonEngine::new(enforcer);
+        let skills = vec![SkillMeta {
+            name: "pdf-processing".to_string(),
+            description: "Process PDF files".to_string(),
+            location: "/tmp/pdf-processing/SKILL.md".to_string(),
+        }];
+        let schemas = engine.generate_tool_schemas(&skills);
+        let arr = schemas.as_array().unwrap();
+        // Only read_skill + list_all_skills when whitelists are empty
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["name"], "read_skill");
+        assert_eq!(arr[1]["name"], "list_all_skills");
+        // Verify skill_name enum
+        let skill_enum = &arr[0]["parameters"]["properties"]["skill_name"]["enum"];
+        assert_eq!(skill_enum[0], "pdf-processing");
     }
 }

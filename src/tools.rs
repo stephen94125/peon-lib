@@ -1,4 +1,5 @@
 use crate::enforcer::FileEnforcer;
+use crate::scanner::{SkillMeta, generate_skills_xml};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::Deserialize;
@@ -19,7 +20,76 @@ impl ToolCallError {
 }
 
 // ==========================================
-// 1. Read File Tool (The 'R' in RWX)
+// 1. Read Skill Tool (The Discovery Layer)
+// ==========================================
+#[derive(Deserialize)]
+pub struct ReadSkillArgs {
+    pub skill_name: String,
+}
+
+pub struct ReadSkillTool {
+    skills: Arc<Vec<SkillMeta>>,
+}
+
+impl ReadSkillTool {
+    pub fn new(skills: Arc<Vec<SkillMeta>>) -> Self {
+        Self { skills }
+    }
+}
+
+impl Tool for ReadSkillTool {
+    const NAME: &'static str = "read_skill";
+    type Error = ToolCallError;
+    type Args = ReadSkillArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        let skill_names: Vec<String> = self.skills.iter().map(|s| s.name.clone()).collect();
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Read a skill's SKILL.md to get its instructions and available resources."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "enum": skill_names,
+                        "description": "Name of the skill to read"
+                    }
+                },
+                "required": ["skill_name"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let skill = self
+            .skills
+            .iter()
+            .find(|s| s.name == args.skill_name)
+            .ok_or_else(|| {
+                ToolCallError::new(format!(
+                    "Skill '{}' not found. Use list_all_skills to see available skills.",
+                    args.skill_name
+                ))
+            })?;
+
+        println!("📖 [ReadSkill] Reading skill: {}", skill.name);
+
+        tokio::fs::read_to_string(&skill.location)
+            .await
+            .map_err(|e| {
+                ToolCallError::new(format!(
+                    "Failed to read SKILL.md at '{}': {}",
+                    skill.location, e
+                ))
+            })
+    }
+}
+
+// ==========================================
+// 2. Read File Tool (The Information Layer)
 // ==========================================
 #[derive(Deserialize)]
 pub struct ReadFileArgs {
@@ -45,13 +115,13 @@ impl Tool for ReadFileTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Read the contents of a file at the given path.".to_string(),
+            description: "Read the contents of a pre-validated file.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Absolute or relative path to the file to read"
+                        "description": "Path to the file to read"
                     }
                 },
                 "required": ["path"]
@@ -75,152 +145,159 @@ impl Tool for ReadFileTool {
 }
 
 // ==========================================
-// 2. Write File Tool (The 'W' in RWX)
+// 3. Execute Script Tool (The Action Layer)
 // ==========================================
 #[derive(Deserialize)]
-pub struct WriteFileArgs {
+pub struct ExecuteScriptArgs {
     pub path: String,
-    pub content: String,
+    pub arguments: Option<Vec<String>>,
 }
 
-pub struct WriteFileTool {
+pub struct ExecuteScriptTool {
     enforcer: Arc<FileEnforcer>,
 }
 
-impl WriteFileTool {
+impl ExecuteScriptTool {
     pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
         Self { enforcer }
     }
+
+    /// Determines the interpreter to use based on the file extension.
+    /// Falls back to running the script directly (relies on shebang).
+    fn resolve_interpreter(path: &str) -> (String, Vec<String>) {
+        if path.ends_with(".py") {
+            ("python3".to_string(), vec![path.to_string()])
+        } else if path.ends_with(".js") {
+            ("node".to_string(), vec![path.to_string()])
+        } else if path.ends_with(".sh") {
+            ("bash".to_string(), vec![path.to_string()])
+        } else if path.ends_with(".rb") {
+            ("ruby".to_string(), vec![path.to_string()])
+        } else if path.ends_with(".ts") {
+            ("npx".to_string(), vec!["tsx".to_string(), path.to_string()])
+        } else {
+            // Fallback: execute directly, relying on shebang
+            (path.to_string(), vec![])
+        }
+    }
 }
 
-impl Tool for WriteFileTool {
-    const NAME: &'static str = "write_file";
+impl Tool for ExecuteScriptTool {
+    const NAME: &'static str = "execute_script";
     type Error = ToolCallError;
-    type Args = WriteFileArgs;
+    type Args = ExecuteScriptArgs;
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Write content to a file at the given path.".to_string(),
+            description: "Execute a pre-validated script with optional CLI arguments.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Absolute or relative path to the file to write"
+                        "description": "Path to the script to execute"
                     },
-                    "content": {
-                        "type": "string",
-                        "description": "The content to write into the file"
+                    "arguments": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional CLI arguments to pass to the script"
                     }
                 },
-                "required": ["path", "content"]
-            }),
-        }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // Enforce 'write' action
-        if !self.enforcer.enforce("agent", "write", &args.path).await {
-            return Err(ToolCallError::new(format!(
-                "Security Violation: Write access to '{}' denied.",
-                args.path
-            )));
-        }
-
-        tokio::fs::write(&args.path, args.content)
-            .await
-            .map_err(|e| ToolCallError::new(format!("Failed to write file: {}", e)))?;
-
-        Ok(format!("Successfully wrote to {}", args.path))
-    }
-}
-
-// ==========================================
-// 3. Bash Tool (The 'X' in RWX)
-// ==========================================
-#[derive(Deserialize)]
-pub struct BashArgs {
-    pub command: String,
-}
-
-pub struct BashTool {
-    enforcer: Arc<FileEnforcer>,
-}
-
-impl BashTool {
-    pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
-        Self { enforcer }
-    }
-}
-
-impl Tool for BashTool {
-    const NAME: &'static str = "bash";
-    type Error = ToolCallError;
-    type Args = BashArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Execute a bash command and return its stdout, stderr, and exit code."
-                .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The bash command string to execute"
-                    }
-                },
-                "required": ["command"]
+                "required": ["path"]
             }),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // Enforce 'execute' action
-        if !self
-            .enforcer
-            .enforce("agent", "execute", &args.command)
-            .await
-        {
+        if !self.enforcer.enforce("agent", "execute", &args.path).await {
             return Err(ToolCallError::new(format!(
                 "Security Violation: Execution of '{}' denied.",
-                args.command
+                args.path
             )));
         }
 
-        println!("⚡ [Bash] Executing: {}", args.command);
+        let (interpreter, mut interpreter_args) = Self::resolve_interpreter(&args.path);
+        // Append user-provided arguments
+        if let Some(user_args) = args.arguments {
+            interpreter_args.extend(user_args);
+        }
 
-        // Spawn child process capturing stdout and stderr
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(&args.command)
+        println!(
+            "⚡ [ExecuteScript] Running: {} {}",
+            interpreter,
+            interpreter_args.join(" ")
+        );
+
+        let output = Command::new(interpreter)
+            .args(&interpreter_args)
             .output()
             .await
-            .map_err(|e| ToolCallError::new(format!("Failed to spawn bash process: {}", e)))?;
+            .map_err(|e| {
+                ToolCallError::new(format!("Failed to execute script '{}': {}", args.path, e))
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        // Combine into a structured response for the LLM
         let mut result = format!("Exit Code: {}\n", exit_code);
-
         if !stdout.is_empty() {
             result.push_str(&format!("--- STDOUT ---\n{}\n", stdout));
         }
         if !stderr.is_empty() {
             result.push_str(&format!("--- STDERR ---\n{}\n", stderr));
         }
-
-        // If both are empty, tell the LLM it succeeded silently
         if stdout.is_empty() && stderr.is_empty() {
-            result.push_str("Command executed silently with no output.");
+            result.push_str("Script executed silently with no output.");
         }
 
         Ok(result)
+    }
+}
+
+// ==========================================
+// 4. List All Skills Tool (Discovery Helper)
+// ==========================================
+#[derive(Deserialize)]
+pub struct ListAllSkillsArgs {}
+
+pub struct ListAllSkillsTool {
+    skills: Arc<Vec<SkillMeta>>,
+}
+
+impl ListAllSkillsTool {
+    pub fn new(skills: Arc<Vec<SkillMeta>>) -> Self {
+        Self { skills }
+    }
+}
+
+impl Tool for ListAllSkillsTool {
+    const NAME: &'static str = "list_all_skills";
+    type Error = ToolCallError;
+    type Args = ListAllSkillsArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "List all available skills with their names, descriptions, and locations."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        }
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        println!(
+            "📋 [ListAllSkills] Returning skill catalog ({} skills)",
+            self.skills.len()
+        );
+        Ok(generate_skills_xml(&self.skills))
     }
 }
