@@ -1,5 +1,6 @@
 use crate::enforcer::FileEnforcer;
 use crate::scanner::{SkillMeta, generate_skills_xml};
+use log::{debug, error, info, warn};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::Deserialize;
@@ -75,16 +76,24 @@ impl Tool for ReadSkillTool {
                 ))
             })?;
 
-        println!("📖 [ReadSkill] Reading skill: {}", skill.name);
+        info!("Tool call: read_skill('{}')", skill.name);
+        debug!("Reading SKILL.md from: {}", skill.location);
 
-        tokio::fs::read_to_string(&skill.location)
+        let content = tokio::fs::read_to_string(&skill.location)
             .await
             .map_err(|e| {
                 ToolCallError::new(format!(
                     "Failed to read SKILL.md at '{}': {}",
                     skill.location, e
                 ))
-            })
+            })?;
+
+        debug!(
+            "read_skill('{}') returned {} bytes",
+            skill.name,
+            content.len()
+        );
+        Ok(content)
     }
 }
 
@@ -130,17 +139,25 @@ impl Tool for ReadFileTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        info!("Tool call: read_file('{}')", args.path);
+
         // Enforce 'read' action
         if !self.enforcer.enforce("agent", "read", &args.path).await {
+            warn!("Read access DENIED for path: {}", args.path);
             return Err(ToolCallError::new(format!(
                 "Security Violation: Read access to '{}' denied.",
                 args.path
             )));
         }
 
-        tokio::fs::read_to_string(&args.path)
+        info!("Read access granted for: {}", args.path);
+
+        let content = tokio::fs::read_to_string(&args.path)
             .await
-            .map_err(|e| ToolCallError::new(format!("Failed to read file: {}", e)))
+            .map_err(|e| ToolCallError::new(format!("Failed to read file: {}", e)))?;
+
+        debug!("read_file('{}') returned {} bytes", args.path, content.len());
+        Ok(content)
     }
 }
 
@@ -211,13 +228,21 @@ impl Tool for ExecuteScriptTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        info!(
+            "Tool call: execute_script('{}', args={:?})",
+            args.path, args.arguments
+        );
+
         // Enforce 'execute' action
         if !self.enforcer.enforce("agent", "execute", &args.path).await {
+            warn!("Execute access DENIED for path: {}", args.path);
             return Err(ToolCallError::new(format!(
                 "Security Violation: Execution of '{}' denied.",
                 args.path
             )));
         }
+
+        info!("Execute access granted for: {}", args.path);
 
         let (interpreter, mut interpreter_args) = Self::resolve_interpreter(&args.path);
         // Append user-provided arguments
@@ -225,23 +250,31 @@ impl Tool for ExecuteScriptTool {
             interpreter_args.extend(user_args);
         }
 
-        println!(
-            "⚡ [ExecuteScript] Running: {} {}",
-            interpreter,
-            interpreter_args.join(" ")
+        debug!(
+            "Resolved interpreter: '{}', full args: {:?}",
+            interpreter, interpreter_args
         );
 
-        let output = Command::new(interpreter)
+        let output = Command::new(&interpreter)
             .args(&interpreter_args)
             .output()
             .await
             .map_err(|e| {
+                error!("Failed to spawn process '{}': {}", interpreter, e);
                 ToolCallError::new(format!("Failed to execute script '{}': {}", args.path, e))
             })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let exit_code = output.status.code().unwrap_or(-1);
+
+        debug!(
+            "Script '{}' exit_code={}, stdout_len={}, stderr_len={}",
+            args.path,
+            exit_code,
+            stdout.len(),
+            stderr.len()
+        );
 
         let mut result = format!("Exit Code: {}\n", exit_code);
         if !stdout.is_empty() {
@@ -294,10 +327,12 @@ impl Tool for ListAllSkillsTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        println!(
-            "📋 [ListAllSkills] Returning skill catalog ({} skills)",
+        info!(
+            "Tool call: list_all_skills() — returning {} skill(s)",
             self.skills.len()
         );
-        Ok(generate_skills_xml(&self.skills))
+        let xml = generate_skills_xml(&self.skills);
+        debug!("list_all_skills output:\n{}", xml);
+        Ok(xml)
     }
 }

@@ -1,6 +1,7 @@
+use log::debug;
 use std::sync::Arc;
 
-/// The Security Enforcer for OpenFang.
+/// The Security Enforcer for Peon.
 /// Future integration point for Casbin.
 pub struct FileEnforcer {
     // e: casbin::Enforcer,
@@ -14,8 +15,8 @@ impl FileEnforcer {
     /// Evaluates if a subject can perform an action on a resource.
     /// Actions are mapped to Linux-style RWX: "read", "write", "execute".
     pub async fn enforce(&self, subject: &str, action: &str, resource: &str) -> bool {
-        println!(
-            "🛡️ [Enforcer] Evaluating: Subject='{}', Action='{}', Resource='{}'",
+        debug!(
+            "Enforcer: subject='{}', action='{}', resource='{}'",
             subject, action, resource
         );
 

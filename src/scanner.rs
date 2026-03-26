@@ -1,4 +1,5 @@
 use crate::enforcer::FileEnforcer;
+use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -67,15 +68,15 @@ pub async fn scan_skills(
         .unwrap_or_else(|_| PathBuf::from(base_dir));
 
     if !base_path.exists() {
-        println!(
-            "⚠️  [Scanner] Directory '{}' not found. Returning empty skills list.",
+        warn!(
+            "Skills directory '{}' not found — returning empty skills list",
             base_path.display()
         );
         return Ok(Vec::new());
     }
 
-    println!(
-        "🔍 [Scanner] Scanning for skills in '{}' (max depth: {})...",
+    info!(
+        "Scanning for skills in '{}' (max depth: {})",
         base_path.display(),
         depth
     );
@@ -90,8 +91,8 @@ pub async fn scan_skills(
     // Sort by name for deterministic output.
     skills.sort_by(|a, b| a.name.cmp(&b.name));
 
-    println!(
-        "✅ [Scanner] Found {} skill(s) total (visited {} directories).",
+    info!(
+        "Scan complete: found {} skill(s) (visited {} directories)",
         skills.len(),
         dir_count.load(Ordering::Relaxed)
     );
@@ -115,8 +116,8 @@ fn scan_dir_recursive<'a>(
 
         // Enforce the max-directory safety bound.
         if dir_count.fetch_add(1, Ordering::Relaxed) >= MAX_DIRS {
-            println!(
-                "  ⚠️  [Scanner] Reached directory limit ({}). Stopping scan.",
+            warn!(
+                "Reached directory limit ({}). Stopping scan early.",
                 MAX_DIRS
             );
             return;
@@ -125,7 +126,7 @@ fn scan_dir_recursive<'a>(
         let mut entries = match fs::read_dir(dir).await {
             Ok(e) => e,
             Err(e) => {
-                println!("  ⚠️  [Scanner] Could not read '{}': {}", dir.display(), e);
+                warn!("Could not read directory '{}': {}", dir.display(), e);
                 return;
             }
         };
@@ -155,12 +156,15 @@ fn scan_dir_recursive<'a>(
                 if let Some(meta) = try_load_skill(skill_path, &dir_name).await {
                     // Duplicate check: first-found wins (project-scope convention).
                     if let Some(existing) = found.get(&meta.name) {
-                        println!(
-                            "  ⚠️  [Scanner] Name collision: '{}' already loaded from '{}'. \
-                             Ignoring duplicate at '{}'.",
+                        warn!(
+                            "Name collision: '{}' already loaded from '{}'. Ignoring duplicate at '{}'.",
                             meta.name, existing.location, meta.location
                         );
                     } else {
+                        debug!(
+                            "Loaded skill '{}' from '{}'",
+                            meta.name, meta.location
+                        );
                         found.insert(meta.name.clone(), meta);
                     }
                 }
@@ -192,8 +196,8 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
     let content = match fs::read_to_string(skill_md_path).await {
         Ok(c) => c,
         Err(e) => {
-            println!(
-                "  ❌ [Scanner] Failed to read {:?}: {} — skipping.",
+            error!(
+                "Failed to read {:?}: {} — skipping skill",
                 skill_md_path, e
             );
             return None;
@@ -203,8 +207,8 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
     let yaml_str = match extract_frontmatter(&content) {
         Some(y) => y,
         None => {
-            println!(
-                "  ❌ [Scanner] No valid frontmatter in {:?} — skipping.",
+            error!(
+                "No valid frontmatter in {:?} — skipping skill",
                 skill_md_path
             );
             return None;
@@ -214,8 +218,8 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
     let frontmatter = match serde_yaml::from_str::<SkillFrontmatter>(&yaml_str) {
         Ok(fm) => fm,
         Err(e) => {
-            println!(
-                "  ❌ [Scanner] YAML parse error in {:?}: {} — skipping.",
+            error!(
+                "YAML parse error in {:?}: {} — skipping skill",
                 skill_md_path, e
             );
             return None;
@@ -226,8 +230,8 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
     let description = match frontmatter.description {
         Some(ref d) if !d.trim().is_empty() => d.trim().to_string(),
         _ => {
-            println!(
-                "  ❌ [Scanner] Skill '{}' in {:?} has no description — skipping.",
+            error!(
+                "Skill '{}' in {:?} has no description — skipping",
                 frontmatter.name, skill_md_path
             );
             return None;
@@ -254,40 +258,36 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
 /// Does NOT prevent loading — lenient mode per spec §Lenient validation.
 fn validate_skill_name(name: &str, dir_name: &str, path: &Path) {
     if name != dir_name {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' does not match directory '{}' at {:?}.",
+        warn!(
+            "Skill name '{}' does not match directory '{}' at {:?}",
             name, dir_name, path
         );
     }
     if name.len() > 64 {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' exceeds 64 characters at {:?}.",
+        warn!(
+            "Skill name '{}' exceeds 64 characters at {:?}",
             name, path
         );
     }
     // Per reference validator: allows Unicode alphanumeric (not just ASCII).
     if name != name.to_lowercase() {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' must be lowercase at {:?}.",
-            name, path
-        );
+        warn!("Skill name '{}' must be lowercase at {:?}", name, path);
     }
     if !name.chars().all(|c| c.is_alphanumeric() || c == '-') {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' contains invalid characters at {:?}. \
-             Only letters, digits, and hyphens are allowed.",
+        warn!(
+            "Skill name '{}' contains invalid characters at {:?} (only letters, digits, hyphens allowed)",
             name, path
         );
     }
     if name.starts_with('-') || name.ends_with('-') {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' must not start or end with a hyphen at {:?}.",
+        warn!(
+            "Skill name '{}' must not start or end with a hyphen at {:?}",
             name, path
         );
     }
     if name.contains("--") {
-        println!(
-            "  ⚠️  [Scanner] Skill name '{}' must not contain consecutive hyphens at {:?}.",
+        warn!(
+            "Skill name '{}' must not contain consecutive hyphens at {:?}",
             name, path
         );
     }
@@ -381,6 +381,7 @@ pub fn scan_paths_in_content(content: &str) -> Vec<String> {
         }
     }
 
+    debug!("Regex scan extracted {} path(s) from content", paths.len());
     paths
 }
 
@@ -427,34 +428,44 @@ impl PeonEngine {
 
             // 1. Existence check
             if fs::metadata(&resolved).await.is_err() {
-                println!(
-                    "  ⚠️  [PeonEngine] Path '{}' (resolved: '{}') does not exist — skipping.",
+                debug!(
+                    "Path '{}' (resolved: '{}') does not exist — skipping",
                     raw_path,
                     resolved.display()
                 );
                 continue;
             }
 
+            debug!(
+                "Path '{}' resolved to '{}' — file exists",
+                raw_path,
+                resolved.display()
+            );
+
             // 2. Permission checks & dynamic routing
-            if self.enforcer.enforce(agent_id, "read", &resolved_str).await {
+            let can_read = self.enforcer.enforce(agent_id, "read", &resolved_str).await;
+            let can_execute = self
+                .enforcer
+                .enforce(agent_id, "execute", &resolved_str)
+                .await;
+
+            if !can_read && !can_execute {
+                warn!(
+                    "All permissions denied for path '{}' — not added to any whitelist",
+                    resolved_str
+                );
+                continue;
+            }
+
+            if can_read {
                 if self.known_read_paths.insert(resolved_str.clone()) {
-                    println!(
-                        "  📖 [PeonEngine] Added to read whitelist: {}",
-                        resolved_str
-                    );
+                    info!("Added to read whitelist: {}", resolved_str);
                 }
             }
 
-            if self
-                .enforcer
-                .enforce(agent_id, "execute", &resolved_str)
-                .await
-            {
+            if can_execute {
                 if self.known_execute_paths.insert(resolved_str.clone()) {
-                    println!(
-                        "  ⚡ [PeonEngine] Added to execute whitelist: {}",
-                        resolved_str
-                    );
+                    info!("Added to execute whitelist: {}", resolved_str);
                 }
             }
         }
@@ -464,7 +475,7 @@ impl PeonEngine {
     pub fn reset_session(&mut self) {
         self.known_read_paths.clear();
         self.known_execute_paths.clear();
-        println!("🔄 [PeonEngine] Session reset — all whitelists cleared.");
+        info!("Session reset — all whitelists cleared");
     }
 
     /// Returns a sorted snapshot of the current read whitelist.
@@ -565,7 +576,13 @@ impl PeonEngine {
             }
         }));
 
-        serde_json::json!(tools)
+        let schemas = serde_json::json!(tools);
+        debug!(
+            "Generated tool schemas ({} tools): {}",
+            tools.len(),
+            serde_json::to_string_pretty(&schemas).unwrap_or_default()
+        );
+        schemas
     }
 }
 
