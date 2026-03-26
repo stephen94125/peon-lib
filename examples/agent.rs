@@ -5,7 +5,7 @@
 
 use peon_lib::any_model::AnyModel;
 use peon_lib::enforcer::FileEnforcer;
-use peon_lib::scanner::{generate_skills_xml, scan_skills};
+use peon_lib::scanner::{PeonEngine, generate_skills_xml, scan_skills};
 use peon_lib::tools::{ExecuteScriptTool, ListAllSkillsTool, ReadFileTool, ReadSkillTool};
 
 use rig::completion::Prompt;
@@ -39,18 +39,29 @@ async fn main() -> anyhow::Result<()> {
     log::debug!("Skills XML catalog:\n{}", skills_xml);
 
     // ================================================================
+    // Phase 2: Create PeonEngine — source of truth for path whitelists
+    // ================================================================
+    let enforcer = FileEnforcer::new();
+    let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
+
+    // Share the live whitelists with the tools.
+    // PeonEngine populates them lazily as read_skill() is called per-session.
+    let read_paths = Arc::clone(&engine.read_paths);
+    let execute_paths = Arc::clone(&engine.execute_paths);
+
+    // ================================================================
     // Create model from environment
     // ================================================================
     let model = AnyModel::from_env();
 
     // ================================================================
-    // Build enforcer + tools
+    // Build tools — ReadFileTool and ExecuteScriptTool hold shared refs
+    // to the whitelists so their definition() always reflects live state.
     // ================================================================
-    let enforcer = FileEnforcer::new();
-
-    let read_skill_tool = ReadSkillTool::new(Arc::clone(&skills));
-    let read_file_tool = ReadFileTool::new(Arc::clone(&enforcer));
-    let execute_script_tool = ExecuteScriptTool::new(Arc::clone(&enforcer));
+    let read_skill_tool = ReadSkillTool::new(Arc::clone(&skills), Arc::clone(&engine));
+    let read_file_tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+    let execute_script_tool =
+        ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
     let list_all_skills_tool = ListAllSkillsTool::new(Arc::clone(&skills));
 
     // ================================================================
@@ -59,15 +70,16 @@ async fn main() -> anyhow::Result<()> {
     let system_prompt = format!(
         r#"You are Peon, a powerful and versatile local agent executor.
 
-**Your Core Responsibilities:**
-1. Select and execute the appropriate skills to complete tasks based on the user's intent.
-2. Ensure a safe execution process; do not randomly guess unknown file paths.
-3. If a task can be answered directly with text and does not require operating the system, return the text directly without calling any tools.
-
 **Your Execution Process:**
-1. **Skill Exploration**: Check the `<available_skills>` tags below to find a skill that matches the task requirements.
-2. **Skill Loading**: If a suitable skill is found, you MUST call the `read_skill` tool (passing the skill name) to obtain instructions.
-3. **Task Execution**: After reading the skill instructions, use `read_file` or `execute_script` to follow them.
+1. **Skill Exploration**: Check the `<available_skills>` tags below to find a matching skill.
+2. **Skill Loading**: Call `read_skill` (passing the skill name) to get instructions and unlock allowed file/script paths.
+3. **Task Execution**: Use `read_file` or `execute_script` with paths exactly as specified in the skill instructions.
+
+**Security Rules — read carefully:**
+- `read_file` and `execute_script` only accept paths that were explicitly listed in a skill's SKILL.md.
+- If a tool returns a **Permission Denied** error, it means the path is not whitelisted. Do NOT attempt alternative paths or workarounds.
+- When a permission error occurs, tell the user clearly: what was attempted, that it was blocked by the security policy, and suggest they contact an administrator if they believe this is a mistake.
+- Never fabricate results. If you cannot execute a required step, say so honestly.
 
 {}
 "#,
@@ -97,6 +109,9 @@ async fn main() -> anyhow::Result<()> {
 
     let response = agent.prompt(user_input).await?;
     log::info!("Agent response: {}", response);
+
+    // Example: reset session between conversations
+    engine.reset_session().await;
 
     Ok(())
 }

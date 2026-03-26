@@ -1,9 +1,10 @@
 use crate::enforcer::FileEnforcer;
-use crate::scanner::{SkillMeta, generate_skills_xml};
+use crate::scanner::{PeonEngine, SharedExecutePaths, SharedReadPaths, SkillMeta, generate_skills_xml};
 use log::{debug, error, info, warn};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::Deserialize;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::process::Command;
 
@@ -30,11 +31,12 @@ pub struct ReadSkillArgs {
 
 pub struct ReadSkillTool {
     skills: Arc<Vec<SkillMeta>>,
+    engine: Arc<PeonEngine>,
 }
 
 impl ReadSkillTool {
-    pub fn new(skills: Arc<Vec<SkillMeta>>) -> Self {
-        Self { skills }
+    pub fn new(skills: Arc<Vec<SkillMeta>>, engine: Arc<PeonEngine>) -> Self {
+        Self { skills, engine }
     }
 }
 
@@ -93,6 +95,16 @@ impl Tool for ReadSkillTool {
             skill.name,
             content.len()
         );
+
+        // === Populate the whitelist from this skill's content ===
+        // The skill's base dir is the folder containing SKILL.md.
+        let skill_base_dir = Path::new(&skill.location)
+            .parent()
+            .unwrap_or(Path::new("."));
+        self.engine
+            .process_skill_content("agent", skill_base_dir, &content)
+            .await;
+
         Ok(content)
     }
 }
@@ -107,11 +119,16 @@ pub struct ReadFileArgs {
 
 pub struct ReadFileTool {
     enforcer: Arc<FileEnforcer>,
+    /// Live whitelist — shared with `PeonEngine`. Definition reads it on every call.
+    allowed_paths: SharedReadPaths,
 }
 
 impl ReadFileTool {
-    pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
-        Self { enforcer }
+    pub fn new(enforcer: Arc<FileEnforcer>, allowed_paths: SharedReadPaths) -> Self {
+        Self {
+            enforcer,
+            allowed_paths,
+        }
     }
 }
 
@@ -122,6 +139,20 @@ impl Tool for ReadFileTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
+        let guard = self.allowed_paths.read().await;
+        let mut paths: Vec<String> = guard.iter().cloned().collect();
+        paths.sort();
+        drop(guard);
+
+        // If whitelist is empty, send an empty enum so LLM can't invent paths.
+        let enum_values: serde_json::Value = if paths.is_empty() {
+            serde_json::json!([""])
+        } else {
+            serde_json::json!(paths)
+        };
+
+        debug!("read_file definition: {} path(s) in whitelist", paths.len());
+
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "Read the contents of a pre-validated file.".to_string(),
@@ -130,7 +161,8 @@ impl Tool for ReadFileTool {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the file to read"
+                        "enum": enum_values,
+                        "description": "Exact path to read — must be one of the whitelisted paths"
                     }
                 },
                 "required": ["path"]
@@ -141,11 +173,29 @@ impl Tool for ReadFileTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         info!("Tool call: read_file('{}')", args.path);
 
-        // Enforce 'read' action
+        // === Layer 1: Hard whitelist check (cannot be bypassed by LLM) ===
+        {
+            let guard = self.allowed_paths.read().await;
+            if !guard.contains(&args.path) {
+                warn!(
+                    "SECURITY VIOLATION: '{}' not in read whitelist — blocked",
+                    args.path
+                );
+                return Err(ToolCallError::new(format!(
+                    "Permission Denied: '{}' is not in the read whitelist. \
+                     Only paths discovered from a skill's SKILL.md are allowed. \
+                     Call read_skill first to load the relevant skill and unlock its paths.",
+                    args.path
+                )));
+            }
+        }
+
+        // === Layer 2: Enforcer check (Casbin-ready) ===
         if !self.enforcer.enforce("agent", "read", &args.path).await {
-            warn!("Read access DENIED for path: {}", args.path);
+            warn!("Read access DENIED by enforcer for: {}", args.path);
             return Err(ToolCallError::new(format!(
-                "Security Violation: Read access to '{}' denied.",
+                "Permission Denied: The enforcer rejected read access to '{}'. \
+                 Please inform the user that this file cannot be accessed due to permission policy.",
                 args.path
             )));
         }
@@ -172,11 +222,16 @@ pub struct ExecuteScriptArgs {
 
 pub struct ExecuteScriptTool {
     enforcer: Arc<FileEnforcer>,
+    /// Live whitelist — shared with `PeonEngine`. Definition reads it on every call.
+    allowed_paths: SharedExecutePaths,
 }
 
 impl ExecuteScriptTool {
-    pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
-        Self { enforcer }
+    pub fn new(enforcer: Arc<FileEnforcer>, allowed_paths: SharedExecutePaths) -> Self {
+        Self {
+            enforcer,
+            allowed_paths,
+        }
     }
 
     /// Determines the interpreter to use based on the file extension.
@@ -206,6 +261,23 @@ impl Tool for ExecuteScriptTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
+        let guard = self.allowed_paths.read().await;
+        let mut paths: Vec<String> = guard.iter().cloned().collect();
+        paths.sort();
+        drop(guard);
+
+        // If whitelist is empty, send an empty enum so LLM can't invent paths.
+        let enum_values: serde_json::Value = if paths.is_empty() {
+            serde_json::json!([""])
+        } else {
+            serde_json::json!(paths)
+        };
+
+        debug!(
+            "execute_script definition: {} path(s) in whitelist",
+            paths.len()
+        );
+
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "Execute a pre-validated script with optional CLI arguments.".to_string(),
@@ -214,7 +286,8 @@ impl Tool for ExecuteScriptTool {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the script to execute"
+                        "enum": enum_values,
+                        "description": "Exact script path to execute — must be one of the whitelisted paths"
                     },
                     "arguments": {
                         "type": "array",
@@ -233,11 +306,29 @@ impl Tool for ExecuteScriptTool {
             args.path, args.arguments
         );
 
-        // Enforce 'execute' action
+        // === Layer 1: Hard whitelist check (cannot be bypassed by LLM) ===
+        {
+            let guard = self.allowed_paths.read().await;
+            if !guard.contains(&args.path) {
+                warn!(
+                    "SECURITY VIOLATION: '{}' not in execute whitelist — blocked",
+                    args.path
+                );
+                return Err(ToolCallError::new(format!(
+                    "Permission Denied: '{}' is not in the execute whitelist. \
+                     Only script files discovered from a skill's SKILL.md are allowed. \
+                     Call read_skill first to load the relevant skill and unlock its scripts.",
+                    args.path
+                )));
+            }
+        }
+
+        // === Layer 2: Enforcer check (Casbin-ready) ===
         if !self.enforcer.enforce("agent", "execute", &args.path).await {
-            warn!("Execute access DENIED for path: {}", args.path);
+            warn!("Execute access DENIED by enforcer for: {}", args.path);
             return Err(ToolCallError::new(format!(
-                "Security Violation: Execution of '{}' denied.",
+                "Permission Denied: The enforcer rejected execute access to '{}'. \
+                 Please inform the user that this script cannot be run due to permission policy.",
                 args.path
             )));
         }
@@ -245,7 +336,6 @@ impl Tool for ExecuteScriptTool {
         info!("Execute access granted for: {}", args.path);
 
         let (interpreter, mut interpreter_args) = Self::resolve_interpreter(&args.path);
-        // Append user-provided arguments
         if let Some(user_args) = args.arguments {
             interpreter_args.extend(user_args);
         }

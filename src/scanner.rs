@@ -7,6 +7,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::fs;
+use tokio::sync::RwLock;
+
+/// Shared, live-updated read path whitelist.
+/// Passed to `ReadFileTool` so `definition()` always reflects the latest scan.
+pub type SharedReadPaths = Arc<RwLock<HashSet<String>>>;
+
+/// Shared, live-updated execute path whitelist.
+/// Passed to `ExecuteScriptTool` so `definition()` always reflects the latest scan.
+pub type SharedExecutePaths = Arc<RwLock<HashSet<String>>>;
 
 // ==========================================
 // Data structures
@@ -394,26 +403,28 @@ pub fn scan_paths_in_content(content: &str) -> Vec<String> {
 /// After a skill's SKILL.md is read, the engine scans its content for
 /// path-like strings, resolves them to absolute paths relative to the
 /// skill's directory, checks existence and permissions, then appends
-/// valid paths to the read/execute whitelists.
+/// valid paths to the shared read/execute whitelists.
 pub struct PeonEngine {
     enforcer: Arc<FileEnforcer>,
-    known_read_paths: HashSet<String>,
-    known_execute_paths: HashSet<String>,
+    /// Shared with `ReadFileTool` — both see the same live data.
+    pub read_paths: SharedReadPaths,
+    /// Shared with `ExecuteScriptTool` — both see the same live data.
+    pub execute_paths: SharedExecutePaths,
 }
 
 impl PeonEngine {
     pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
         Self {
             enforcer,
-            known_read_paths: HashSet::new(),
-            known_execute_paths: HashSet::new(),
+            read_paths: Arc::new(RwLock::new(HashSet::new())),
+            execute_paths: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
     /// Scans skill content for paths, resolves them relative to `skill_base_dir`,
-    /// checks existence + permissions, and appends to whitelists.
+    /// checks existence + permissions, and appends to shared whitelists.
     pub async fn process_skill_content(
-        &mut self,
+        &self,
         agent_id: &str,
         skill_base_dir: &Path,
         content: &str,
@@ -458,13 +469,15 @@ impl PeonEngine {
             }
 
             if can_read {
-                if self.known_read_paths.insert(resolved_str.clone()) {
+                let mut guard = self.read_paths.write().await;
+                if guard.insert(resolved_str.clone()) {
                     info!("Added to read whitelist: {}", resolved_str);
                 }
             }
 
             if can_execute {
-                if self.known_execute_paths.insert(resolved_str.clone()) {
+                let mut guard = self.execute_paths.write().await;
+                if guard.insert(resolved_str.clone()) {
                     info!("Added to execute whitelist: {}", resolved_str);
                 }
             }
@@ -472,39 +485,31 @@ impl PeonEngine {
     }
 
     /// Clears all whitelists (Phase 4: Context Sliding).
-    pub fn reset_session(&mut self) {
-        self.known_read_paths.clear();
-        self.known_execute_paths.clear();
+    pub async fn reset_session(&self) {
+        self.read_paths.write().await.clear();
+        self.execute_paths.write().await.clear();
         info!("Session reset — all whitelists cleared");
     }
 
-    /// Returns a sorted snapshot of the current read whitelist.
-    pub fn read_paths(&self) -> Vec<String> {
-        let mut paths: Vec<String> = self.known_read_paths.iter().cloned().collect();
-        paths.sort();
-        paths
-    }
-
-    /// Returns a sorted snapshot of the current execute whitelist.
-    pub fn execute_paths(&self) -> Vec<String> {
-        let mut paths: Vec<String> = self.known_execute_paths.iter().cloned().collect();
-        paths.sort();
-        paths
-    }
-
     /// Generates the dynamic Tool JSON Schema array for the current turn.
-    ///
-    /// The `read_file` tool's `path` parameter gets an `enum` constraint
-    /// from `known_read_paths`, and `execute_script` gets one from
-    /// `known_execute_paths`. The `read_skill` tool's `skill_name` enum
-    /// is built from the provided skill catalog.
-    pub fn generate_tool_schemas(&self, skills: &[SkillMeta]) -> serde_json::Value {
+    /// This is kept for reference/testing — in production the tools read directly
+    /// from the shared `Arc<RwLock>` in their own `definition()` methods.
+    pub async fn generate_tool_schemas(&self, skills: &[SkillMeta]) -> serde_json::Value {
         let skill_names: Vec<String> = skills.iter().map(|s| s.name.clone()).collect();
-        let read_paths = self.read_paths();
-        let execute_paths = self.execute_paths();
+        let read_paths: Vec<String> = {
+            let guard = self.read_paths.read().await;
+            let mut v: Vec<String> = guard.iter().cloned().collect();
+            v.sort();
+            v
+        };
+        let execute_paths: Vec<String> = {
+            let guard = self.execute_paths.read().await;
+            let mut v: Vec<String> = guard.iter().cloned().collect();
+            v.sort();
+            v
+        };
 
         let mut tools = vec![
-            // read_skill — always present
             serde_json::json!({
                 "name": "read_skill",
                 "description": "Read a skill's SKILL.md to get its instructions and available resources.",
@@ -522,7 +527,6 @@ impl PeonEngine {
             }),
         ];
 
-        // read_file — only present when whitelist is non-empty
         if !read_paths.is_empty() {
             tools.push(serde_json::json!({
                 "name": "read_file",
@@ -541,7 +545,6 @@ impl PeonEngine {
             }));
         }
 
-        // execute_script — only present when whitelist is non-empty
         if !execute_paths.is_empty() {
             tools.push(serde_json::json!({
                 "name": "execute_script",
@@ -565,7 +568,6 @@ impl PeonEngine {
             }));
         }
 
-        // list_all_skills — always present
         tools.push(serde_json::json!({
             "name": "list_all_skills",
             "description": "List all available skills with their names, descriptions, and locations.",
@@ -578,9 +580,8 @@ impl PeonEngine {
 
         let schemas = serde_json::json!(tools);
         debug!(
-            "Generated tool schemas ({} tools): {}",
-            tools.len(),
-            serde_json::to_string_pretty(&schemas).unwrap_or_default()
+            "Generated tool schemas ({} tools)",
+            tools.len()
         );
         schemas
     }
@@ -943,8 +944,8 @@ Then run ./scripts/deploy.sh again.
     // generate_tool_schemas unit tests
     // ------------------------------------
 
-    #[test]
-    fn test_generate_tool_schemas_minimal() {
+    #[tokio::test]
+    async fn test_generate_tool_schemas_minimal() {
         let enforcer = FileEnforcer::new();
         let engine = PeonEngine::new(enforcer);
         let skills = vec![SkillMeta {
@@ -952,7 +953,7 @@ Then run ./scripts/deploy.sh again.
             description: "Process PDF files".to_string(),
             location: "/tmp/pdf-processing/SKILL.md".to_string(),
         }];
-        let schemas = engine.generate_tool_schemas(&skills);
+        let schemas = engine.generate_tool_schemas(&skills).await;
         let arr = schemas.as_array().unwrap();
         // Only read_skill + list_all_skills when whitelists are empty
         assert_eq!(arr.len(), 2);
