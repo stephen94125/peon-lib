@@ -170,10 +170,7 @@ fn scan_dir_recursive<'a>(
                             meta.name, existing.location, meta.location
                         );
                     } else {
-                        debug!(
-                            "Loaded skill '{}' from '{}'",
-                            meta.name, meta.location
-                        );
+                        debug!("Loaded skill '{}' from '{}'", meta.name, meta.location);
                         found.insert(meta.name.clone(), meta);
                     }
                 }
@@ -205,10 +202,7 @@ async fn try_load_skill(skill_md_path: &Path, dir_name: &str) -> Option<SkillMet
     let content = match fs::read_to_string(skill_md_path).await {
         Ok(c) => c,
         Err(e) => {
-            error!(
-                "Failed to read {:?}: {} — skipping skill",
-                skill_md_path, e
-            );
+            error!("Failed to read {:?}: {} — skipping skill", skill_md_path, e);
             return None;
         }
     };
@@ -273,10 +267,7 @@ fn validate_skill_name(name: &str, dir_name: &str, path: &Path) {
         );
     }
     if name.len() > 64 {
-        warn!(
-            "Skill name '{}' exceeds 64 characters at {:?}",
-            name, path
-        );
+        warn!("Skill name '{}' exceeds 64 characters at {:?}", name, path);
     }
     // Per reference validator: allows Unicode alphanumeric (not just ASCII).
     if name != name.to_lowercase() {
@@ -509,23 +500,21 @@ impl PeonEngine {
             v
         };
 
-        let mut tools = vec![
-            serde_json::json!({
-                "name": "read_skill",
-                "description": "Read a skill's SKILL.md to get its instructions and available resources.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "skill_name": {
-                            "type": "string",
-                            "enum": skill_names,
-                            "description": "Name of the skill to read"
-                        }
-                    },
-                    "required": ["skill_name"]
-                }
-            }),
-        ];
+        let mut tools = vec![serde_json::json!({
+            "name": "read_skill",
+            "description": "Read a skill's SKILL.md to get its instructions and available resources.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "enum": skill_names,
+                        "description": "Name of the skill to read"
+                    }
+                },
+                "required": ["skill_name"]
+            }
+        })];
 
         if !read_paths.is_empty() {
             tools.push(serde_json::json!({
@@ -579,10 +568,7 @@ impl PeonEngine {
         }));
 
         let schemas = serde_json::json!(tools);
-        debug!(
-            "Generated tool schemas ({} tools)",
-            tools.len()
-        );
+        debug!("Generated tool schemas ({} tools)", tools.len());
         schemas
     }
 }

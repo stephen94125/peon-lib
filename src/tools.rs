@@ -208,7 +208,11 @@ impl Tool for ReadFileTool {
             .await
             .map_err(|e| ToolCallError::new(format!("Failed to read file: {}", e)))?;
 
-        debug!("read_file('{}') returned {} bytes", args.path, content.len());
+        debug!(
+            "read_file('{}') returned {} bytes",
+            args.path,
+            content.len()
+        );
         Ok(content)
     }
 }
