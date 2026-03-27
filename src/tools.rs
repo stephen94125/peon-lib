@@ -440,3 +440,299 @@ impl Tool for ListAllSkillsTool {
         Ok(xml)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::{PeonEngine, SkillMeta};
+    use rig::tool::Tool;
+    use std::sync::Arc;
+    use tokio::fs as tfs;
+
+    // ========================================
+    // resolve_interpreter unit tests
+    // ========================================
+
+    #[test]
+    fn test_resolve_interpreter_sh() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("scripts/run.sh");
+        assert_eq!(cmd, "bash");
+        assert_eq!(args, vec!["scripts/run.sh"]);
+    }
+
+    #[test]
+    fn test_resolve_interpreter_py() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("./tools/analyze.py");
+        assert_eq!(cmd, "python3");
+        assert_eq!(args, vec!["./tools/analyze.py"]);
+    }
+
+    #[test]
+    fn test_resolve_interpreter_js() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("index.js");
+        assert_eq!(cmd, "node");
+        assert_eq!(args, vec!["index.js"]);
+    }
+
+    #[test]
+    fn test_resolve_interpreter_ts() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("src/main.ts");
+        assert_eq!(cmd, "npx");
+        assert_eq!(args, vec!["tsx", "src/main.ts"]);
+    }
+
+    #[test]
+    fn test_resolve_interpreter_rb() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("scripts/deploy.rb");
+        assert_eq!(cmd, "ruby");
+        assert_eq!(args, vec!["scripts/deploy.rb"]);
+    }
+
+    #[test]
+    fn test_resolve_interpreter_unknown_falls_through_to_direct_exec() {
+        let (cmd, args) = ExecuteScriptTool::resolve_interpreter("./mybinary");
+        assert_eq!(cmd, "./mybinary", "unknown ext should use path as command");
+        assert!(args.is_empty(), "no interpreter args for direct exec");
+    }
+
+    // ========================================
+    // Whitelist security tests (CRITICAL)
+    // ========================================
+
+    #[tokio::test]
+    async fn test_read_file_rejects_path_not_in_whitelist() {
+        let enforcer = FileEnforcer::new();
+        let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
+            std::collections::HashSet::new(),
+        ));
+
+        let tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: "/etc/passwd".to_string(),
+            })
+            .await;
+
+        assert!(result.is_err(), "unwhitelisted path must be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Permission Denied"),
+            "error must say Permission Denied, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_script_rejects_path_not_in_whitelist() {
+        let enforcer = FileEnforcer::new();
+        let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
+            std::collections::HashSet::new(),
+        ));
+
+        let tool = ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
+
+        let result = tool
+            .call(ExecuteScriptArgs {
+                path: "/bin/sh".to_string(),
+                arguments: None,
+            })
+            .await;
+
+        assert!(result.is_err(), "unwhitelisted script must be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Permission Denied"),
+            "error must say Permission Denied, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_file_accepts_whitelisted_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("allowed.txt");
+        tfs::write(&file_path, "hello from allowed file")
+            .await
+            .unwrap();
+
+        let resolved = file_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let enforcer = FileEnforcer::new();
+        let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
+            std::collections::HashSet::new(),
+        ));
+
+        // Insert into whitelist
+        read_paths.write().await.insert(resolved.clone());
+
+        let tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: resolved,
+            })
+            .await;
+
+        assert!(result.is_ok(), "whitelisted path must succeed");
+        assert_eq!(result.unwrap(), "hello from allowed file");
+    }
+
+    #[tokio::test]
+    async fn test_execute_script_accepts_whitelisted_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script_path = tmp.path().join("test.sh");
+        tfs::write(&script_path, "#!/bin/bash\necho OK")
+            .await
+            .unwrap();
+
+        // Make executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+
+        let resolved = script_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let enforcer = FileEnforcer::new();
+        let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
+            std::collections::HashSet::new(),
+        ));
+
+        execute_paths.write().await.insert(resolved.clone());
+
+        let tool = ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
+
+        let result = tool
+            .call(ExecuteScriptArgs {
+                path: resolved,
+                arguments: None,
+            })
+            .await;
+
+        assert!(result.is_ok(), "whitelisted script must execute");
+        let output = result.unwrap();
+        assert!(output.contains("OK"), "output must contain script stdout");
+    }
+
+    // ========================================
+    // read_skill tool tests
+    // ========================================
+
+    #[tokio::test]
+    async fn test_read_skill_unknown_name_returns_error() {
+        let skills = Arc::new(vec![SkillMeta {
+            name: "roll-dice".to_string(),
+            description: "Roll dice.".to_string(),
+            location: "/tmp/roll-dice/SKILL.md".to_string(),
+        }]);
+        let enforcer = FileEnforcer::new();
+        let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
+
+        let tool = ReadSkillTool::new(skills, engine);
+
+        let result = tool
+            .call(ReadSkillArgs {
+                skill_name: "nonexistent-skill".to_string(),
+            })
+            .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("not found"),
+            "error must mention 'not found', got: {}",
+            err_msg
+        );
+    }
+
+    // ========================================
+    // list_all_skills tool tests
+    // ========================================
+
+    #[tokio::test]
+    async fn test_list_all_skills_returns_xml() {
+        let skills = Arc::new(vec![
+            SkillMeta {
+                name: "deploy".to_string(),
+                description: "Deploy app.".to_string(),
+                location: "/tmp/deploy/SKILL.md".to_string(),
+            },
+            SkillMeta {
+                name: "rollback".to_string(),
+                description: "Rollback app.".to_string(),
+                location: "/tmp/rollback/SKILL.md".to_string(),
+            },
+        ]);
+
+        let tool = ListAllSkillsTool::new(skills);
+
+        let result = tool.call(ListAllSkillsArgs {}).await;
+        assert!(result.is_ok());
+        let xml = result.unwrap();
+        assert!(xml.contains("<available_skills>"));
+        assert!(xml.contains("deploy"));
+        assert!(xml.contains("rollback"));
+        assert!(xml.contains("</available_skills>"));
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::sync::Arc;
+
+    proptest! {
+        /// Any random path must be rejected by `read_file` when whitelist is empty.
+        #[test]
+        fn read_file_rejects_any_random_path(path in "\\PC+") {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let enforcer = FileEnforcer::new();
+                let read_paths: SharedReadPaths = Arc::new(
+                    tokio::sync::RwLock::new(std::collections::HashSet::new()),
+                );
+                let tool = ReadFileTool::new(enforcer, read_paths);
+                let result = tool.call(ReadFileArgs { path: path.clone() }).await;
+                prop_assert!(
+                    result.is_err(),
+                    "random path '{}' must be rejected by empty whitelist", path
+                );
+                Ok(())
+            })?;
+        }
+
+        /// Any random path must be rejected by `execute_script` when whitelist is empty.
+        #[test]
+        fn execute_script_rejects_any_random_path(path in "\\PC+") {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let enforcer = FileEnforcer::new();
+                let execute_paths: SharedExecutePaths = Arc::new(
+                    tokio::sync::RwLock::new(std::collections::HashSet::new()),
+                );
+                let tool = ExecuteScriptTool::new(enforcer, execute_paths);
+                let result = tool.call(ExecuteScriptArgs {
+                    path: path.clone(),
+                    arguments: None,
+                }).await;
+                prop_assert!(
+                    result.is_err(),
+                    "random path '{}' must be rejected by empty whitelist", path
+                );
+                Ok(())
+            })?;
+        }
+    }
+}

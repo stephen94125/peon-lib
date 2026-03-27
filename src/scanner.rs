@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_frontmatter_empty_body() {
+    fn test_extract_frontmatter_inline_dashes_not_treated_as_close() {
         // A `---` value embedded in a YAML string must NOT close the block.
         let content = "---\nname: foo\ndescription: see --- above\n---\n";
         // The `---` inside the description line contains spaces around it,
@@ -948,5 +948,264 @@ Then run ./scripts/deploy.sh again.
         // Verify skill_name enum
         let skill_enum = &arr[0]["parameters"]["properties"]["skill_name"]["enum"];
         assert_eq!(skill_enum[0], "pdf-processing");
+    }
+
+    // ------------------------------------
+    // extract_frontmatter edge cases
+    // ------------------------------------
+
+    #[test]
+    fn test_extract_frontmatter_leading_whitespace_not_valid_delimiter() {
+        // Leading whitespace before `---` means it's NOT a frontmatter delimiter.
+        let content = "  ---\nname: foo\n---\n";
+        assert_eq!(extract_frontmatter(content), None);
+    }
+
+    // ------------------------------------
+    // validate_skill_name (lenient warnings)
+    // These are hard to test for warn! output, so we test that
+    // skill still loads despite the warning.
+    // ------------------------------------
+
+    #[tokio::test]
+    async fn test_scan_loads_skill_with_uppercase_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_skill(
+            tmp.path(),
+            "MySkill",
+            "name: MySkill\ndescription: Uppercase name.",
+            "Body.",
+        )
+        .await;
+
+        let skills = scan_skills(tmp.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        // validate_skill_name warns but does NOT skip
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "MySkill");
+    }
+
+    #[tokio::test]
+    async fn test_scan_loads_skill_with_name_dir_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Directory name is "folder-name" but skill name is "different-name"
+        make_skill(
+            tmp.path(),
+            "folder-name",
+            "name: different-name\ndescription: Mismatched.",
+            "Body.",
+        )
+        .await;
+
+        let skills = scan_skills(tmp.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        // validate_skill_name warns but does NOT skip
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "different-name");
+    }
+
+    #[tokio::test]
+    async fn test_scan_loads_skill_with_invalid_chars_in_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_skill(
+            tmp.path(),
+            "bad_skill!",
+            "name: bad_skill!\ndescription: Invalid chars.",
+            "Body.",
+        )
+        .await;
+
+        let skills = scan_skills(tmp.path().to_str().unwrap(), None)
+            .await
+            .unwrap();
+        // validate_skill_name warns but does NOT skip
+        assert_eq!(skills.len(), 1);
+    }
+
+    // ------------------------------------
+    // process_skill_content + reset_session
+    // ------------------------------------
+
+    #[tokio::test]
+    async fn test_process_skill_content_populates_whitelists() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create a file that can be discovered
+        let scripts_dir = tmp.path().join("scripts");
+        tfs::create_dir_all(&scripts_dir).await.unwrap();
+        let script_file = scripts_dir.join("run.sh");
+        tfs::write(&script_file, "#!/bin/bash\necho hello")
+            .await
+            .unwrap();
+
+        let enforcer = FileEnforcer::new();
+        let engine = PeonEngine::new(Arc::clone(&enforcer));
+
+        // Content references the script path
+        let content = "Run the script: scripts/run.sh";
+        engine
+            .process_skill_content("agent", tmp.path(), content)
+            .await;
+
+        let resolved = script_file
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let read_guard = engine.read_paths.read().await;
+        assert!(
+            read_guard.contains(&resolved),
+            "script path must be in read whitelist"
+        );
+        drop(read_guard);
+
+        let exec_guard = engine.execute_paths.read().await;
+        assert!(
+            exec_guard.contains(&resolved),
+            "script path must be in execute whitelist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reset_session_clears_all_whitelists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let scripts_dir = tmp.path().join("scripts");
+        tfs::create_dir_all(&scripts_dir).await.unwrap();
+        tfs::write(scripts_dir.join("run.sh"), "#!/bin/bash\necho hello")
+            .await
+            .unwrap();
+
+        let enforcer = FileEnforcer::new();
+        let engine = PeonEngine::new(Arc::clone(&enforcer));
+
+        engine
+            .process_skill_content("agent", tmp.path(), "scripts/run.sh")
+            .await;
+
+        // Whitelists should be populated
+        assert!(!engine.read_paths.read().await.is_empty());
+        assert!(!engine.execute_paths.read().await.is_empty());
+
+        // Reset should clear both
+        engine.reset_session().await;
+        assert!(
+            engine.read_paths.read().await.is_empty(),
+            "read whitelist must be empty after reset"
+        );
+        assert!(
+            engine.execute_paths.read().await.is_empty(),
+            "execute whitelist must be empty after reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_generate_tool_schemas_with_populated_whitelist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let scripts_dir = tmp.path().join("scripts");
+        tfs::create_dir_all(&scripts_dir).await.unwrap();
+        tfs::write(scripts_dir.join("deploy.sh"), "#!/bin/bash")
+            .await
+            .unwrap();
+
+        let enforcer = FileEnforcer::new();
+        let engine = PeonEngine::new(Arc::clone(&enforcer));
+
+        engine
+            .process_skill_content("agent", tmp.path(), "scripts/deploy.sh")
+            .await;
+
+        let skills = vec![SkillMeta {
+            name: "deploy".to_string(),
+            description: "Deploy stuff".to_string(),
+            location: "/tmp/deploy/SKILL.md".to_string(),
+        }];
+
+        let schemas = engine.generate_tool_schemas(&skills).await;
+        let arr = schemas.as_array().unwrap();
+        // Should now have read_skill + read_file + execute_script + list_all_skills = 4
+        assert_eq!(arr.len(), 4, "all 4 tools should be present when whitelist is populated");
+
+        let tool_names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(tool_names.contains(&"read_skill"));
+        assert!(tool_names.contains(&"read_file"));
+        assert!(tool_names.contains(&"execute_script"));
+        assert!(tool_names.contains(&"list_all_skills"));
+    }
+
+    // ------------------------------------
+    // scan_paths_in_content edge cases
+    // ------------------------------------
+
+    #[test]
+    fn test_scan_paths_ignores_absolute_paths() {
+        let content = "Do not read /etc/passwd or /usr/bin/env";
+        let paths = scan_paths_in_content(content);
+        for p in &paths {
+            assert!(
+                !p.starts_with('/'),
+                "absolute path '{}' must not be extracted",
+                p
+            );
+        }
+    }
+
+    #[test]
+    fn test_scan_paths_ignores_urls() {
+        let content = "See https://example.com/docs/api.md for details";
+        let paths = scan_paths_in_content(content);
+        for p in &paths {
+            assert!(
+                !p.contains("://"),
+                "URL '{}' must not be extracted as a path",
+                p
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// `scan_paths_in_content` must never panic on arbitrary input.
+        #[test]
+        fn scan_paths_never_panics(input in "\\PC*") {
+            let _ = scan_paths_in_content(&input);
+        }
+
+        /// Any extracted path must contain `/` (multi-segment) — the regex
+        /// requires at least one directory separator.
+        #[test]
+        fn scan_paths_results_always_contain_slash(input in "\\PC*") {
+            let paths = scan_paths_in_content(&input);
+            for p in &paths {
+                prop_assert!(
+                    p.contains('/'),
+                    "extracted path '{}' must contain '/'", p
+                );
+            }
+        }
+
+        /// Extracted paths must never start with `/` (absolute paths filtered by regex).
+        #[test]
+        fn scan_paths_results_never_absolute(input in "\\PC*") {
+            let paths = scan_paths_in_content(&input);
+            for p in &paths {
+                prop_assert!(
+                    !p.starts_with('/'),
+                    "extracted path '{}' must not be absolute", p
+                );
+            }
+        }
+
+        /// `extract_frontmatter` must never panic on arbitrary input.
+        #[test]
+        fn extract_frontmatter_never_panics(input in "\\PC*") {
+            let _ = extract_frontmatter(&input);
+        }
     }
 }
