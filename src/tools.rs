@@ -241,7 +241,14 @@ impl ExecuteScriptTool {
     }
 
     /// Determines the interpreter to use based on the file extension.
-    /// Falls back to running the script directly (relies on shebang).
+    ///
+    /// Supported extensions: `.sh` (bash), `.py` (python3), `.js` (node),
+    /// `.rb` (ruby), `.ts` (npx tsx).
+    ///
+    /// Unknown extensions → executed directly as a native binary or shebang script.
+    /// The OS will use the shebang line (`#!/usr/bin/env ...`) if present,
+    /// or treat the file as a compiled ELF/binary. This is intentional and
+    /// still fully gated by the whitelist.
     fn resolve_interpreter(path: &str) -> (String, Vec<String>) {
         if path.ends_with(".py") {
             ("python3".to_string(), vec![path.to_string()])
@@ -254,7 +261,8 @@ impl ExecuteScriptTool {
         } else if path.ends_with(".ts") {
             ("npx".to_string(), vec!["tsx".to_string(), path.to_string()])
         } else {
-            // Fallback: execute directly, relying on shebang
+            // No known extension: run as native binary or shebang script.
+            // Equivalent to `./path` in a shell — the OS decides how to exec it.
             (path.to_string(), vec![])
         }
     }
