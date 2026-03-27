@@ -1,5 +1,7 @@
 use crate::enforcer::FileEnforcer;
-use crate::scanner::{PeonEngine, SharedExecutePaths, SharedReadPaths, SkillMeta, generate_skills_xml};
+use crate::scanner::{
+    PeonEngine, SharedExecutePaths, SharedReadPaths, SkillMeta, generate_skills_xml,
+};
 use log::{debug, error, info, warn};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;

@@ -1,6 +1,6 @@
 //! Unified multi-provider model abstraction for rig.
 //!
-//! This module provides [`AnyModel`], an enum-dispatch wrapper that implements
+//! This module provides [`PeonModel`], an enum-dispatch wrapper that implements
 //! [`rig::completion::CompletionModel`]. It allows runtime selection of any
 //! supported provider while exposing a single concrete type, so you can
 //! feed it into [`AgentBuilder`], [`Prompt`](rig::completion::Prompt),
@@ -62,7 +62,7 @@ use rig::providers::xai;
 /// at runtime. Implements [`CompletionModel`] so it plugs directly into
 /// [`AgentBuilder`], [`Prompt`](rig::completion::Prompt), etc.
 #[derive(Clone)]
-pub enum AnyModel {
+pub enum PeonModel {
     #[cfg(feature = "anthropic")]
     Anthropic(anthropic::completion::CompletionModel),
     #[cfg(feature = "azure")]
@@ -103,13 +103,13 @@ pub enum AnyModel {
     Xai(xai::completion::CompletionModel),
 }
 
-/// Type-erased streaming response used by [`AnyModel`].
+/// Type-erased streaming response used by [`PeonModel`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AnyStreamingResponse {
+pub struct PeonStreamingResponse {
     pub usage: Option<rig::completion::Usage>,
 }
 
-impl GetTokenUsage for AnyStreamingResponse {
+impl GetTokenUsage for PeonStreamingResponse {
     fn token_usage(&self) -> Option<rig::completion::Usage> {
         self.usage
     }
@@ -119,43 +119,43 @@ macro_rules! dispatch_completion {
     ($self:expr, $req:expr) => {
         match $self {
             #[cfg(feature = "anthropic")]
-            AnyModel::Anthropic(m) => convert_response(m.completion($req).await?),
+            PeonModel::Anthropic(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "azure")]
-            AnyModel::Azure(m) => convert_response(m.completion($req).await?),
+            PeonModel::Azure(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "cohere")]
-            AnyModel::Cohere(m) => convert_response(m.completion($req).await?),
+            PeonModel::Cohere(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "deepseek")]
-            AnyModel::Deepseek(m) => convert_response(m.completion($req).await?),
+            PeonModel::Deepseek(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "galadriel")]
-            AnyModel::Galadriel(m) => convert_response(m.completion($req).await?),
+            PeonModel::Galadriel(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "gemini")]
-            AnyModel::Gemini(m) => convert_response(m.completion($req).await?),
+            PeonModel::Gemini(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "groq")]
-            AnyModel::Groq(m) => convert_response(m.completion($req).await?),
+            PeonModel::Groq(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "huggingface")]
-            AnyModel::Huggingface(m) => convert_response(m.completion($req).await?),
+            PeonModel::Huggingface(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "hyperbolic")]
-            AnyModel::Hyperbolic(m) => convert_response(m.completion($req).await?),
+            PeonModel::Hyperbolic(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "llamafile")]
-            AnyModel::Llamafile(m) => convert_response(m.completion($req).await?),
+            PeonModel::Llamafile(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "mira")]
-            AnyModel::Mira(m) => convert_response(m.completion($req).await?),
+            PeonModel::Mira(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "mistral")]
-            AnyModel::Mistral(m) => convert_response(m.completion($req).await?),
+            PeonModel::Mistral(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "moonshot")]
-            AnyModel::Moonshot(m) => convert_response(m.completion($req).await?),
+            PeonModel::Moonshot(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "ollama")]
-            AnyModel::Ollama(m) => convert_response(m.completion($req).await?),
+            PeonModel::Ollama(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "openai")]
-            AnyModel::OpenAi(m) => convert_response(m.completion($req).await?),
+            PeonModel::OpenAi(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "openrouter")]
-            AnyModel::OpenRouter(m) => convert_response(m.completion($req).await?),
+            PeonModel::OpenRouter(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "perplexity")]
-            AnyModel::Perplexity(m) => convert_response(m.completion($req).await?),
+            PeonModel::Perplexity(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "together")]
-            AnyModel::Together(m) => convert_response(m.completion($req).await?),
+            PeonModel::Together(m) => convert_response(m.completion($req).await?),
             #[cfg(feature = "xai")]
-            AnyModel::Xai(m) => convert_response(m.completion($req).await?),
+            PeonModel::Xai(m) => convert_response(m.completion($req).await?),
         }
     };
 }
@@ -175,15 +175,15 @@ fn convert_response<T: Serialize>(
     })
 }
 
-impl CompletionModel for AnyModel {
+impl CompletionModel for PeonModel {
     type Response = serde_json::Value;
-    type StreamingResponse = AnyStreamingResponse;
+    type StreamingResponse = PeonStreamingResponse;
     type Client = ();
 
     fn make(_client: &Self::Client, _model: impl Into<String>) -> Self {
         panic!(
-            "AnyModel::make() is not supported. \
-             Use AnyModel::from_env() or AnyModel::new(provider, model) instead."
+            "PeonModel::make() is not supported. \
+             Use PeonModel::new(provider, model, api_key) instead."
         );
     }
 
@@ -199,89 +199,92 @@ impl CompletionModel for AnyModel {
         _request: CompletionRequest,
     ) -> Result<StreamingCompletionResponse<Self::StreamingResponse>, CompletionError> {
         panic!(
-            "AnyModel::stream() is not supported. \
+            "PeonModel::stream() is not supported. \
              Use the concrete provider model type for streaming."
         );
     }
 }
 
-impl AnyModel {
-    /// Create an [`AnyModel`] by provider name and model name.
+impl PeonModel {
+    /// Create a [`PeonModel`] by provider name and model name.
     ///
     /// Provider names are case-insensitive. The corresponding feature flag
     /// must be enabled at compile time or this will panic.
     ///
+    /// Each provider reads its own environment variable for authentication
+    /// (e.g. `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, etc.).
+    ///
     /// # Example
     /// ```rust,ignore
-    /// let model = AnyModel::new("gemini", "gemini-2.5-flash");
-    /// let model = AnyModel::new("openai", "gpt-4o");
+    /// let model = PeonModel::new("gemini", "gemini-2.5-flash");
+    /// let model = PeonModel::new("openai", "gpt-4o");
     /// ```
     pub fn new(provider: &str, model_name: &str) -> Self {
         match provider.to_lowercase().as_str() {
             #[cfg(feature = "anthropic")]
             "anthropic" => {
-                AnyModel::Anthropic(anthropic::Client::from_env().completion_model(model_name))
+                PeonModel::Anthropic(anthropic::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "azure")]
-            "azure" => AnyModel::Azure(azure::Client::from_env().completion_model(model_name)),
+            "azure" => PeonModel::Azure(azure::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "cohere")]
-            "cohere" => AnyModel::Cohere(cohere::Client::from_env().completion_model(model_name)),
+            "cohere" => PeonModel::Cohere(cohere::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "deepseek")]
             "deepseek" => {
-                AnyModel::Deepseek(deepseek::Client::from_env().completion_model(model_name))
+                PeonModel::Deepseek(deepseek::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "galadriel")]
             "galadriel" => {
-                AnyModel::Galadriel(galadriel::Client::from_env().completion_model(model_name))
+                PeonModel::Galadriel(galadriel::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "gemini")]
-            "gemini" => AnyModel::Gemini(gemini::Client::from_env().completion_model(model_name)),
+            "gemini" => PeonModel::Gemini(gemini::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "groq")]
-            "groq" => AnyModel::Groq(groq::Client::from_env().completion_model(model_name)),
+            "groq" => PeonModel::Groq(groq::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "huggingface")]
             "huggingface" => {
-                AnyModel::Huggingface(huggingface::Client::from_env().completion_model(model_name))
+                PeonModel::Huggingface(huggingface::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "hyperbolic")]
             "hyperbolic" => {
-                AnyModel::Hyperbolic(hyperbolic::Client::from_env().completion_model(model_name))
+                PeonModel::Hyperbolic(hyperbolic::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "llamafile")]
             "llamafile" => {
-                AnyModel::Llamafile(llamafile::Client::from_env().completion_model(model_name))
+                PeonModel::Llamafile(llamafile::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "mira")]
-            "mira" => AnyModel::Mira(mira::Client::from_env().completion_model(model_name)),
+            "mira" => PeonModel::Mira(mira::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "mistral")]
             "mistral" => {
-                AnyModel::Mistral(mistral::Client::from_env().completion_model(model_name))
+                PeonModel::Mistral(mistral::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "moonshot")]
             "moonshot" => {
-                AnyModel::Moonshot(moonshot::Client::from_env().completion_model(model_name))
+                PeonModel::Moonshot(moonshot::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "ollama")]
-            "ollama" => AnyModel::Ollama(ollama::Client::from_env().completion_model(model_name)),
+            "ollama" => PeonModel::Ollama(ollama::Client::from_env().completion_model(model_name)),
             #[cfg(feature = "openai")]
-            "openai" => AnyModel::OpenAi(
+            "openai" => PeonModel::OpenAi(
                 openai::Client::from_env()
                     .completions_api()
                     .completion_model(model_name),
             ),
             #[cfg(feature = "openrouter")]
             "openrouter" => {
-                AnyModel::OpenRouter(openrouter::Client::from_env().completion_model(model_name))
+                PeonModel::OpenRouter(openrouter::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "perplexity")]
             "perplexity" => {
-                AnyModel::Perplexity(perplexity::Client::from_env().completion_model(model_name))
+                PeonModel::Perplexity(perplexity::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "together")]
             "together" => {
-                AnyModel::Together(together::Client::from_env().completion_model(model_name))
+                PeonModel::Together(together::Client::from_env().completion_model(model_name))
             }
             #[cfg(feature = "xai")]
-            "xai" => AnyModel::Xai(xai::Client::from_env().completion_model(model_name)),
+            "xai" => PeonModel::Xai(xai::Client::from_env().completion_model(model_name)),
             other => panic!(
                 "Unsupported or disabled provider: \"{other}\". \
                  Make sure the `{other}` feature is enabled in Cargo.toml."
@@ -289,7 +292,7 @@ impl AnyModel {
         }
     }
 
-    /// Create an [`AnyModel`] from `DEFAULT_PROVIDER` and `DEFAULT_MODEL`
+    /// Create a [`PeonModel`] from `DEFAULT_PROVIDER` and `DEFAULT_MODEL`
     /// environment variables.
     ///
     /// - `DEFAULT_PROVIDER` defaults to `"openai"` if unset.
@@ -298,7 +301,7 @@ impl AnyModel {
         let provider = env::var("DEFAULT_PROVIDER")
             .unwrap_or_else(|_| "openai".to_string())
             .to_lowercase();
-        let model_name = env::var("DEFAULT_MODEL").unwrap_or_else(|_| "gpt-5.4-nano".to_string());
+        let model_name = env::var("DEFAULT_MODEL").unwrap_or_else(|_| "gpt-5.4".to_string());
         Self::new(&provider, &model_name)
     }
 
@@ -306,12 +309,12 @@ impl AnyModel {
     ///
     /// # Example
     /// ```rust,ignore
-    /// let agent = AnyModel::new("gemini", "gemini-2.5-flash")
+    /// let agent = PeonModel::new("gemini", "gemini-2.5-flash")
     ///     .agent()
     ///     .preamble("You are a helpful assistant.")
     ///     .build();
     /// ```
-    pub fn agent(self) -> AgentBuilder<AnyModel> {
+    pub fn agent(self) -> AgentBuilder<PeonModel> {
         AgentBuilder::new(self)
     }
 }
