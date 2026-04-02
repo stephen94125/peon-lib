@@ -17,7 +17,7 @@
 这是一个 Cargo Workspace（工作区）项目，包含以下库：
 
 - **[`peon-core`](peon-core/README.zh-CN.md)**: 零信任引擎的核心。包含了各类工具封装、扫描架构以及基于 Casbin 的访问权限执行器。**(如果您想直接使用本框架，请从这里开始！)**
-- *`peon-cli` (计划中)*: 用于会话管理的终端交互界面。
+- **[`peon-cli`](peon-cli/README.zh-CN.md)**: 通用的 CLI 入口，用于将终端命令行与管道数据流 (`echo "数据" | peon-cli`) 直接注入到 AI 智能核心中。
 - *`peon-discord / peon-telegram` (计划中)*: 聊天社交平台接入支持。
 
 ## 🧠 模型提供商无关 (Provider Agnostic)

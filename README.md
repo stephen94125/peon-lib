@@ -17,7 +17,7 @@ By decoupling the AI interaction layer from the system execution layer, Peon ach
 This repository is a Cargo Workspace containing the following crates:
 
 - **[`peon-core`](peon-core/README.md)**: The heart of the zero-trust engine. Includes tools, scanning architecture, and Casbin access enforcement. **(Start here to use the framework!)**
-- *`peon-cli` (Planned)*: Interactive terminal shell for session management.
+- **[`peon-cli`](peon-cli/README.md)**: Universal CLI entry point to bridge your terminal usage and pipelines (`echo "data" | peon-cli`) with the AI core.
 - *`peon-discord / peon-telegram` (Planned)*: Chat platform integrations.
 
 ## 🧠 Provider Agnostic
