@@ -132,3 +132,148 @@ impl FileEnforcer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    // Helper to abstract CWD alignment since enforcer aligns to CWD natively
+    fn align_cwd(path: &str) -> String {
+        let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+        cwd.join(path).canonicalize().unwrap_or(cwd.join(path)).to_string_lossy().to_string()
+    }
+
+    /// 1. 語意解析與防呆 (Syntax Parsing & Robustness)
+    #[tokio::test]
+    async fn test_parse_ignore_comments_and_blank_lines() {
+        let rules = "
+            # This is a comment
+            
+            r, /home/test1.txt
+            # Another comment
+        ";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        assert!(enforcer.enforce("agent", "read", "/home/test1.txt").await);
+        // Ensure no stray rules
+        assert!(!enforcer.enforce("agent", "write", "/home/test1.txt").await);
+    }
+
+    #[tokio::test]
+    async fn test_parse_malformed_syntax_skipped() {
+        let rules = "
+            r /missing/comma
+            z, /unknown/action
+            r, /home/test.txt
+        ";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Malformed should be skipped gracefully
+        assert!(enforcer.enforce("agent", "read", "/home/test.txt").await);
+    }
+
+    #[tokio::test]
+    async fn test_parse_whitespace_tolerance() {
+        let rules = "   rx   ,   /home/whitespace.txt   ";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        assert!(enforcer.enforce("agent", "read", "/home/whitespace.txt").await);
+        assert!(enforcer.enforce("agent", "execute", "/home/whitespace.txt").await);
+    }
+
+    /// 2. 多重 Action 解析 (Multiplexed Actions)
+    #[tokio::test]
+    async fn test_parse_multiplexed_actions() {
+        let rules = "rwx, /home/multiplex.txt";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        assert!(enforcer.enforce("agent", "read", "/home/multiplex.txt").await);
+        assert!(enforcer.enforce("agent", "write", "/home/multiplex.txt").await);
+        assert!(enforcer.enforce("agent", "execute", "/home/multiplex.txt").await);
+    }
+
+    #[tokio::test]
+    async fn test_action_granularity() {
+        let rules = "r, /home/granularity.txt";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Ensure ONLY read is granted
+        assert!(enforcer.enforce("agent", "read", "/home/granularity.txt").await);
+        assert!(!enforcer.enforce("agent", "execute", "/home/granularity.txt").await);
+        assert!(!enforcer.enforce("agent", "write", "/home/granularity.txt").await);
+    }
+
+    /// 3. 路徑對齊與通配符 (Path Resolution & Wildcards)
+    #[tokio::test]
+    async fn test_relative_path_canonicalization() {
+        let rules = "r, ./src/main.rs";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Resolve absolute manually to check
+        let abs_path = align_cwd("src/main.rs");
+        assert!(enforcer.enforce("agent", "read", &abs_path).await);
+    }
+
+    #[tokio::test]
+    async fn test_directory_wildcard_expansion() {
+        // Enforcer parser automatically converts `/home/dir/` to `/home/dir/*`
+        let rules = "r, /home/user/dir/";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Sub file should be allowed
+        assert!(enforcer.enforce("agent", "read", "/home/user/dir/file.txt").await);
+        assert!(enforcer.enforce("agent", "read", "/home/user/dir/sub/file.txt").await);
+        
+        // Sibling dir should NOT be allowed (proves no prefix overflow)
+        assert!(!enforcer.enforce("agent", "read", "/home/user/dir_sibling/file.txt").await);
+    }
+
+    /// 4. 權限覆蓋與拒絕優先 (Deny-Override Policy Effect)
+    #[tokio::test]
+    async fn test_deny_override_exact_match() {
+        let rules = "
+            r, /home/user/dir/
+            !r, /home/user/dir/secret.txt
+        ";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Normal file allowed by wildcard
+        assert!(enforcer.enforce("agent", "read", "/home/user/dir/normal.txt").await);
+        // Secret file explicitly denied
+        assert!(!enforcer.enforce("agent", "read", "/home/user/dir/secret.txt").await);
+    }
+
+    #[tokio::test]
+    async fn test_deny_override_action_isolation() {
+        let rules = "
+            !x, /home/user/script.sh
+            rx, /home/user/
+        ";
+        let enforcer = FileEnforcer::new().await;
+        enforcer.load_permissions_from_string(rules).await;
+
+        // Read should be allowed by dir wildcard
+        assert!(enforcer.enforce("agent", "read", "/home/user/script.sh").await);
+        // Execute explicitly denied by !x
+        assert!(!enforcer.enforce("agent", "execute", "/home/user/script.sh").await);
+    }
+
+    /// 5. 系統預設行為 (Default Behaviors)
+    #[tokio::test]
+    async fn test_empty_enforcer_default_allow() {
+        let enforcer = FileEnforcer::new().await;
+        
+        // Currently matching MVP backwards compatibility: empty Casbin = default allow.
+        // Wait, NO policies are loaded.
+        assert!(enforcer.enforce("agent", "read", "/random/path.txt").await);
+    }
+}
