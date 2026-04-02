@@ -1,19 +1,25 @@
-[workspace]
-members = ["peon-core", "peon-cli", "peon-telegram", "peon-line"]
-
 [package]
-name = "peon-lib"
+name = "peon-line"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
-[lib]
-name = "peon_lib"
-path = "src/lib.rs"
-
 [dependencies]
-peon-core = { path = "peon-core" }
+peon-core = { path = "../peon-core" }
 anyhow = "1.0.98"
+log = "0.4"
+env_logger = "0.11"
+tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
+axum = "0.8"
+dotenvy = "0.15.7"
+serde_json = "1.0.149"
+serde = { version = "1.0", features = ["derive"] }
+rig-core = "0.33.0"
+thiserror = "2.0"
+
+[dependencies.line-bot-sdk-rust]
+version = "3.0.0"
+features = ["axum_support"]
 
 [features]
 default = ["peon-core/default"]
@@ -36,24 +42,4 @@ openrouter = ["peon-core/openrouter"]
 perplexity = ["peon-core/perplexity"]
 together = ["peon-core/together"]
 xai = ["peon-core/xai"]
-all = [
-    "anthropic",
-    "azure",
-    "cohere",
-    "deepseek",
-    "galadriel",
-    "gemini",
-    "groq",
-    "huggingface",
-    "hyperbolic",
-    "llamafile",
-    "mira",
-    "mistral",
-    "moonshot",
-    "ollama",
-    "openai",
-    "openrouter",
-    "perplexity",
-    "together",
-    "xai",
-]
+all = ["peon-core/all"]
