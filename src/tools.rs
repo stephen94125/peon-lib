@@ -1,4 +1,4 @@
-use crate::enforcer::FileEnforcer;
+use crate::enforcer::{FileEnforcer, UserEnforcer};
 use crate::scanner::{
     PeonEngine, SharedExecutePaths, SharedReadPaths, SkillMeta, generate_skills_xml,
 };
@@ -120,15 +120,21 @@ pub struct ReadFileArgs {
 }
 
 pub struct ReadFileTool {
-    enforcer: Arc<FileEnforcer>,
+    file_enforcer: Arc<FileEnforcer>,
+    user_enforcer: Arc<UserEnforcer>,
     /// Live whitelist — shared with `PeonEngine`. Definition reads it on every call.
     allowed_paths: SharedReadPaths,
 }
 
 impl ReadFileTool {
-    pub fn new(enforcer: Arc<FileEnforcer>, allowed_paths: SharedReadPaths) -> Self {
+    pub fn new(
+        file_enforcer: Arc<FileEnforcer>,
+        user_enforcer: Arc<UserEnforcer>,
+        allowed_paths: SharedReadPaths,
+    ) -> Self {
         Self {
-            enforcer,
+            file_enforcer,
+            user_enforcer,
             allowed_paths,
         }
     }
@@ -193,11 +199,30 @@ impl Tool for ReadFileTool {
         }
 
         // === Layer 2: Enforcer check (Casbin-ready) ===
-        if !self.enforcer.enforce("agent", "read", &args.path).await {
-            warn!("Read access DENIED by enforcer for: {}", args.path);
+        // Using double-check approach: Ask UserEnforcer, then FileEnforcer.
+        // Currently hardcoding user="agent" until ctx provides the actual user id.
+        let user_ok = self
+            .user_enforcer
+            .enforce("agent", "read", &args.path)
+            .await;
+        if !user_ok {
+            warn!("Read access DENIED by USER enforcer for: {}", args.path);
             return Err(ToolCallError::new(format!(
-                "Permission Denied: The enforcer rejected read access to '{}'. \
-                 Please inform the user that this file cannot be accessed due to permission policy.",
+                "USER_PERMISSION_DENIED: The user enforcer rejected read access to '{}'. \
+                 Please inform the user that their current role lacks permission for this action.",
+                args.path
+            )));
+        }
+
+        let file_ok = self
+            .file_enforcer
+            .enforce("agent", "read", &args.path)
+            .await;
+        if !file_ok {
+            warn!("Read access DENIED by FILE enforcer for: {}", args.path);
+            return Err(ToolCallError::new(format!(
+                "FILE_PERMISSION_DENIED: The file enforcer rejected read access to '{}'. \
+                 Please inform the user that this file cannot be accessed due to system permission policies.",
                 args.path
             )));
         }
@@ -227,15 +252,21 @@ pub struct ExecuteScriptArgs {
 }
 
 pub struct ExecuteScriptTool {
-    enforcer: Arc<FileEnforcer>,
+    file_enforcer: Arc<FileEnforcer>,
+    user_enforcer: Arc<UserEnforcer>,
     /// Live whitelist — shared with `PeonEngine`. Definition reads it on every call.
     allowed_paths: SharedExecutePaths,
 }
 
 impl ExecuteScriptTool {
-    pub fn new(enforcer: Arc<FileEnforcer>, allowed_paths: SharedExecutePaths) -> Self {
+    pub fn new(
+        file_enforcer: Arc<FileEnforcer>,
+        user_enforcer: Arc<UserEnforcer>,
+        allowed_paths: SharedExecutePaths,
+    ) -> Self {
         Self {
-            enforcer,
+            file_enforcer,
+            user_enforcer,
             allowed_paths,
         }
     }
@@ -338,11 +369,29 @@ impl Tool for ExecuteScriptTool {
         }
 
         // === Layer 2: Enforcer check (Casbin-ready) ===
-        if !self.enforcer.enforce("agent", "execute", &args.path).await {
-            warn!("Execute access DENIED by enforcer for: {}", args.path);
+        // Using double-check approach: Ask UserEnforcer, then FileEnforcer.
+        let user_ok = self
+            .user_enforcer
+            .enforce("agent", "execute", &args.path)
+            .await;
+        if !user_ok {
+            warn!("Execute access DENIED by USER enforcer for: {}", args.path);
             return Err(ToolCallError::new(format!(
-                "Permission Denied: The enforcer rejected execute access to '{}'. \
-                 Please inform the user that this script cannot be run due to permission policy.",
+                "USER_PERMISSION_DENIED: The user enforcer rejected execute access to '{}'. \
+                 Please inform the user that their current role lacks permission for this action.",
+                args.path
+            )));
+        }
+
+        let file_ok = self
+            .file_enforcer
+            .enforce("agent", "execute", &args.path)
+            .await;
+        if !file_ok {
+            warn!("Execute access DENIED by FILE enforcer for: {}", args.path);
+            return Err(ToolCallError::new(format!(
+                "FILE_PERMISSION_DENIED: The file enforcer rejected execute access to '{}'. \
+                 Please inform the user that this script cannot be run due to system permission policies.",
                 args.path
             )));
         }
@@ -501,12 +550,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_rejects_path_not_in_whitelist() {
-        let enforcer = FileEnforcer::new().await;
-        let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
-            std::collections::HashSet::new(),
-        ));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let read_paths: SharedReadPaths =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
-        let tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+        let tool = ReadFileTool::new(
+            Arc::clone(&file_enforcer),
+            Arc::clone(&user_enforcer),
+            Arc::clone(&read_paths),
+        );
 
         let result = tool
             .call(ReadFileArgs {
@@ -525,12 +578,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_script_rejects_path_not_in_whitelist() {
-        let enforcer = FileEnforcer::new().await;
-        let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
-            std::collections::HashSet::new(),
-        ));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let execute_paths: SharedExecutePaths =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
-        let tool = ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
+        let tool = ExecuteScriptTool::new(
+            Arc::clone(&file_enforcer),
+            Arc::clone(&user_enforcer),
+            Arc::clone(&execute_paths),
+        );
 
         let result = tool
             .call(ExecuteScriptArgs {
@@ -562,21 +619,21 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let enforcer = FileEnforcer::new().await;
-        let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
-            std::collections::HashSet::new(),
-        ));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let read_paths: SharedReadPaths =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
         // Insert into whitelist
         read_paths.write().await.insert(resolved.clone());
 
-        let tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+        let tool = ReadFileTool::new(
+            Arc::clone(&file_enforcer),
+            Arc::clone(&user_enforcer),
+            Arc::clone(&read_paths),
+        );
 
-        let result = tool
-            .call(ReadFileArgs {
-                path: resolved,
-            })
-            .await;
+        let result = tool.call(ReadFileArgs { path: resolved }).await;
 
         assert!(result.is_ok(), "whitelisted path must succeed");
         assert_eq!(result.unwrap(), "hello from allowed file");
@@ -594,8 +651,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-                .unwrap();
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         let resolved = script_path
@@ -604,14 +660,18 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let enforcer = FileEnforcer::new().await;
-        let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
-            std::collections::HashSet::new(),
-        ));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let execute_paths: SharedExecutePaths =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
         execute_paths.write().await.insert(resolved.clone());
 
-        let tool = ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
+        let tool = ExecuteScriptTool::new(
+            Arc::clone(&file_enforcer),
+            Arc::clone(&user_enforcer),
+            Arc::clone(&execute_paths),
+        );
 
         let result = tool
             .call(ExecuteScriptArgs {
@@ -636,8 +696,12 @@ mod tests {
             description: "Roll dice.".to_string(),
             location: "/tmp/roll-dice/SKILL.md".to_string(),
         }]);
-        let enforcer = FileEnforcer::new().await;
-        let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = Arc::new(PeonEngine::new(
+            Arc::clone(&file_enforcer),
+            Arc::clone(&user_enforcer),
+        ));
 
         let tool = ReadSkillTool::new(skills, engine);
 
@@ -699,11 +763,12 @@ mod proptests {
         fn read_file_rejects_any_random_path(path in "\\PC+") {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let enforcer = FileEnforcer::new().await;
+                let file_enforcer = FileEnforcer::new().await;
+                let user_enforcer = UserEnforcer::new().await;
                 let read_paths: SharedReadPaths = Arc::new(
                     tokio::sync::RwLock::new(std::collections::HashSet::new()),
                 );
-                let tool = ReadFileTool::new(enforcer, read_paths);
+                let tool = ReadFileTool::new(file_enforcer, user_enforcer, read_paths);
                 let result = tool.call(ReadFileArgs { path: path.clone() }).await;
                 prop_assert!(
                     result.is_err(),
@@ -718,11 +783,12 @@ mod proptests {
         fn execute_script_rejects_any_random_path(path in "\\PC+") {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let enforcer = FileEnforcer::new().await;
+                let file_enforcer = FileEnforcer::new().await;
+                let user_enforcer = UserEnforcer::new().await;
                 let execute_paths: SharedExecutePaths = Arc::new(
                     tokio::sync::RwLock::new(std::collections::HashSet::new()),
                 );
-                let tool = ExecuteScriptTool::new(enforcer, execute_paths);
+                let tool = ExecuteScriptTool::new(file_enforcer, user_enforcer, execute_paths);
                 let result = tool.call(ExecuteScriptArgs {
                     path: path.clone(),
                     arguments: None,

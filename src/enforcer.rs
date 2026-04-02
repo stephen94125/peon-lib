@@ -13,7 +13,7 @@ pub struct FileEnforcer {
 impl FileEnforcer {
     /// Creates a new FileEnforcer with the embedded model and memory adapter.
     pub async fn new() -> Arc<Self> {
-        let model_conf = include_str!("model.conf");
+        let model_conf = include_str!("file_enforcer_model.conf");
         let m = DefaultModel::from_str(model_conf).await.unwrap();
         let a = MemoryAdapter::default();
         let e = Enforcer::new(m, a).await.unwrap();
@@ -147,11 +147,119 @@ impl FileEnforcer {
         }
     }
 }
+/// The Personnel Security Enforcer for Peon.
+/// Wraps a Casbin CoreEnforcer with RBAC capabilities.
+pub struct UserEnforcer {
+    enforcer: RwLock<Enforcer>,
+}
+
+impl UserEnforcer {
+    /// Creates a new UserEnforcer with the embedded model and memory adapter.
+    pub async fn new() -> Arc<Self> {
+        let model_conf = include_str!("user_enforcer_model.conf");
+        let m = DefaultModel::from_str(model_conf).await.unwrap();
+        let a = MemoryAdapter::default();
+        let mut e = Enforcer::new(m, a).await.unwrap();
+        
+        // Load default policies from CSV
+        let csv_content = include_str!("user_permissions.csv");
+        for line in csv_content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<String> = line.split(',').map(|s| s.trim().to_string()).collect();
+            if parts.len() == 5 && parts[0] == "p" {
+                let _ = e.add_policy(vec![parts[1].clone(), parts[2].clone(), parts[3].clone(), parts[4].clone()]).await;
+            } else if parts.len() == 3 && parts[0] == "g" {
+                let _ = e.add_role_for_user(&parts[1], &parts[2], None).await;
+            }
+        }
+
+        Arc::new(Self {
+            enforcer: RwLock::new(e),
+        })
+    }
+
+    /// Evaluates if a subject (user) can perform an action on a resource.
+    pub async fn enforce(&self, subject: &str, action: &str, resource: &str) -> bool {
+        debug!(
+            "UserEnforcer evaluating: subject='{}', action='{}', resource='{}'",
+            subject, action, resource
+        );
+
+        let e = self.enforcer.read().await;
+        
+        match e.enforce(vec![subject, resource, action]) {
+            Ok(result) => result,
+            Err(err) => {
+                warn!("UserEnforcer Casbin error: {}", err);
+                false
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
+
+    // ========================================
+    // UserEnforcer Personnel Security Tests
+    // ========================================
+
+    #[tokio::test]
+    async fn test_user_enforcer_default_allow_all() {
+        let enforcer = UserEnforcer::new().await;
+        // Default policy is `p, *, *, *`, so any user should be allowed to do anything by default
+        assert!(enforcer.enforce("agent", "read", "/tmp/secret").await, "agent should read by default");
+        assert!(enforcer.enforce("unknown", "execute", "/etc/passwd").await, "unknown should execute by default");
+    }
+
+    #[tokio::test]
+    async fn test_user_enforcer_custom_deny_overrides_wildcard() {
+        let enforcer = UserEnforcer::new().await;
+        {
+            let mut e = enforcer.enforcer.write().await;
+            // The model is a deny-override model (`some(where (p.eft == allow)) && !some(where (p.eft == deny))`).
+            // Add an explicit deny rule: unknown_user cannot read /tmp/secret.
+            // p, subject, resource, action, eft
+            let _ = e.add_policy(vec!["unknown_user".to_string(), "/tmp/secret".to_string(), "read".to_string(), "deny".to_string()]).await;
+        }
+
+        // Even though `p, *, *, allow` exists, the explicit `deny` overrides it because of deny-override effect.
+        assert!(!enforcer.enforce("unknown_user", "read", "/tmp/secret").await, "explicit deny must override wildcard");
+        assert!(enforcer.enforce("unknown_user", "read", "/other/path").await, "wildcard should still apply to other paths");
+        assert!(enforcer.enforce("agent", "read", "/tmp/secret").await, "wildcard should still apply to other users");
+    }
+
+    #[tokio::test]
+    async fn test_user_enforcer_rbac_role_inheritance() {
+        let enforcer = UserEnforcer::new().await;
+        {
+            let mut e = enforcer.enforcer.write().await;
+            // Provide explicit deny for standard users
+            let _ = e.add_policy(vec!["standard_user".to_string(), "/system/config".to_string(), "write".to_string(), "deny".to_string()]).await;
+            
+            // Give specific rights
+            let _ = e.add_policy(vec!["admin_role".to_string(), "/system/config".to_string(), "write".to_string(), "allow".to_string()]).await;
+            
+            // Assign roles
+            let _ = e.add_role_for_user("alice", "admin_role", None).await;
+            let _ = e.add_role_for_user("bob", "standard_user", None).await;
+        }
+
+        // Bob inherits standard_user, which is denied
+        assert!(!enforcer.enforce("bob", "write", "/system/config").await, "bob should inherit deny from standard_user role");
+        
+        // Alice inherits admin_role, which is allowed (and allowed by wildcard too, no deny hits her)
+        assert!(enforcer.enforce("alice", "write", "/system/config").await, "alice should inherit allow from admin_role");
+    }
+
+    // ========================================
+    // FileEnforcer Path Security Tests
+    // ========================================
 
     // Helper to abstract CWD alignment since enforcer aligns to CWD natively
     fn align_cwd(path: &str) -> String {

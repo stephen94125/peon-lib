@@ -1,4 +1,4 @@
-use crate::enforcer::FileEnforcer;
+use crate::enforcer::{FileEnforcer, UserEnforcer};
 use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
@@ -396,7 +396,8 @@ pub fn scan_paths_in_content(content: &str) -> Vec<String> {
 /// skill's directory, checks existence and permissions, then appends
 /// valid paths to the shared read/execute whitelists.
 pub struct PeonEngine {
-    enforcer: Arc<FileEnforcer>,
+    pub file_enforcer: Arc<FileEnforcer>,
+    pub user_enforcer: Arc<UserEnforcer>,
     /// Shared with `ReadFileTool` — both see the same live data.
     pub read_paths: SharedReadPaths,
     /// Shared with `ExecuteScriptTool` — both see the same live data.
@@ -404,9 +405,10 @@ pub struct PeonEngine {
 }
 
 impl PeonEngine {
-    pub fn new(enforcer: Arc<FileEnforcer>) -> Self {
+    pub fn new(file_enforcer: Arc<FileEnforcer>, user_enforcer: Arc<UserEnforcer>) -> Self {
         Self {
-            enforcer,
+            file_enforcer,
+            user_enforcer,
             read_paths: Arc::new(RwLock::new(HashSet::new())),
             execute_paths: Arc::new(RwLock::new(HashSet::new())),
         }
@@ -445,11 +447,25 @@ impl PeonEngine {
             );
 
             // 2. Permission checks & dynamic routing
-            let can_read = self.enforcer.enforce(agent_id, "read", &resolved_str).await;
-            let can_execute = self
-                .enforcer
+            let user_can_read = self
+                .user_enforcer
+                .enforce(agent_id, "read", &resolved_str)
+                .await;
+            let file_can_read = self
+                .file_enforcer
+                .enforce("agent", "read", &resolved_str)
+                .await;
+            let can_read = user_can_read && file_can_read;
+
+            let user_can_execute = self
+                .user_enforcer
                 .enforce(agent_id, "execute", &resolved_str)
                 .await;
+            let file_can_execute = self
+                .file_enforcer
+                .enforce("agent", "execute", &resolved_str)
+                .await;
+            let can_execute = user_can_execute && file_can_execute;
 
             if !can_read && !can_execute {
                 warn!(
@@ -932,8 +948,9 @@ Then run ./scripts/deploy.sh again.
 
     #[tokio::test]
     async fn test_generate_tool_schemas_minimal() {
-        let enforcer = FileEnforcer::new().await;
-        let engine = PeonEngine::new(enforcer);
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = PeonEngine::new(file_enforcer, user_enforcer);
         let skills = vec![SkillMeta {
             name: "pdf-processing".to_string(),
             description: "Process PDF files".to_string(),
@@ -1039,8 +1056,9 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new().await;
-        let engine = PeonEngine::new(Arc::clone(&enforcer));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = PeonEngine::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer));
 
         // Content references the script path
         let content = "Run the script: scripts/run.sh";
@@ -1077,8 +1095,9 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new().await;
-        let engine = PeonEngine::new(Arc::clone(&enforcer));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = PeonEngine::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer));
 
         engine
             .process_skill_content("agent", tmp.path(), "scripts/run.sh")
@@ -1109,8 +1128,9 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new().await;
-        let engine = PeonEngine::new(Arc::clone(&enforcer));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = PeonEngine::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer));
 
         engine
             .process_skill_content("agent", tmp.path(), "scripts/deploy.sh")
@@ -1125,7 +1145,11 @@ Then run ./scripts/deploy.sh again.
         let schemas = engine.generate_tool_schemas(&skills).await;
         let arr = schemas.as_array().unwrap();
         // Should now have read_skill + read_file + execute_script + list_all_skills = 4
-        assert_eq!(arr.len(), 4, "all 4 tools should be present when whitelist is populated");
+        assert_eq!(
+            arr.len(),
+            4,
+            "all 4 tools should be present when whitelist is populated"
+        );
 
         let tool_names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(tool_names.contains(&"read_skill"));

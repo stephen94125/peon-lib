@@ -3,7 +3,7 @@
 //! [`PeonAgent`] encapsulates skill scanning, engine wiring, tool registration,
 //! and system prompt generation behind a single constructor.
 
-use crate::enforcer::FileEnforcer;
+use crate::enforcer::{FileEnforcer, UserEnforcer};
 use crate::peon_model::PeonModel;
 use crate::scanner::{PeonEngine, generate_skills_xml, scan_skills};
 use crate::tools::{ExecuteScriptTool, ListAllSkillsTool, ReadFileTool, ReadSkillTool};
@@ -41,8 +41,9 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Peon, a powerful and versatile l
 
 **Security Rules — read carefully:**
 - `read_file` and `execute_script` only accept paths that were explicitly listed in a skill's SKILL.md.
-- If a tool returns a **Permission Denied** error, it means the path is not whitelisted. Do NOT attempt alternative paths or workarounds.
-- When a permission error occurs, tell the user clearly: what was attempted, that it was blocked by the security policy, and suggest they contact an administrator if they believe this is a mistake.
+- If a tool returns **USER_PERMISSION_DENIED**, it means the user's role lacks personnel permissions to perform this action. Inform the user clearly about this lack of personnel access.
+- If a tool returns **FILE_PERMISSION_DENIED**, it means the action violates the system's file-level policy. Inform the user clearly that this specific path/script is locked down.
+- Do NOT attempt alternative paths or workarounds if permission is denied.
 - Never fabricate results. If you cannot execute a required step, say so honestly.
 
 {}"#;
@@ -72,16 +73,17 @@ impl PeonAgent {
         debug!("Skills XML catalog:\n{}", skills_xml);
 
         // Phase 2: Engine + whitelists
-        let enforcer = FileEnforcer::new().await;
-        let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
+        let file_enforcer = FileEnforcer::new().await;
+        let user_enforcer = UserEnforcer::new().await;
+        let engine = Arc::new(PeonEngine::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer)));
         let read_paths = Arc::clone(&engine.read_paths);
         let execute_paths = Arc::clone(&engine.execute_paths);
 
         // Phase 3: Tools
         let read_skill_tool = ReadSkillTool::new(Arc::clone(&skills), Arc::clone(&engine));
-        let read_file_tool = ReadFileTool::new(Arc::clone(&enforcer), Arc::clone(&read_paths));
+        let read_file_tool = ReadFileTool::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer), Arc::clone(&read_paths));
         let execute_script_tool =
-            ExecuteScriptTool::new(Arc::clone(&enforcer), Arc::clone(&execute_paths));
+            ExecuteScriptTool::new(Arc::clone(&file_enforcer), Arc::clone(&user_enforcer), Arc::clone(&execute_paths));
         let list_all_skills_tool = ListAllSkillsTool::new(Arc::clone(&skills));
 
         // Phase 4: System prompt + build
