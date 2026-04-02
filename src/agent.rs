@@ -59,8 +59,8 @@ impl PeonAgent {
         info!("🚀 Peon agent starting up...");
 
         // Phase 1: Boot & Discovery
-        let skills_dir = ".skills";
-        let skills = scan_skills(skills_dir, None).await?;
+        let skills_dir = std::env::var("PEON_SKILLS_DIR").unwrap_or_else(|_| ".skills".to_string());
+        let skills = scan_skills(&skills_dir, None).await?;
         let skills = Arc::new(skills);
 
         info!(

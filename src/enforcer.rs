@@ -21,11 +21,12 @@ impl FileEnforcer {
             enforcer: RwLock::new(e),
         });
 
-        // Try to load file_permissions.txt from current directory
+        // Try to load file_permissions.txt from environment variable or fallback to current directory
         if let Ok(cwd) = env::current_dir() {
-            let perm_file = cwd.join("file_permissions.txt");
-            if perm_file.exists() {
-                if let Ok(content) = tokio::fs::read_to_string(perm_file).await {
+            let perm_file = std::env::var("PEON_FILE_PERMISSIONS").unwrap_or_else(|_| "file_permissions.txt".to_string());
+            let perm_path = cwd.join(perm_file);
+            if perm_path.exists() {
+                if let Ok(content) = tokio::fs::read_to_string(perm_path).await {
                     file_enforcer.load_permissions_from_string(&content).await;
                 }
             }
@@ -173,7 +174,14 @@ impl UserEnforcer {
         let mut e = Enforcer::new(m, a).await.unwrap();
         
         // Load default policies from CSV
-        let csv_content = include_str!("../user_permissions.csv");
+        let perm_file = std::env::var("PEON_USER_PERMISSIONS").unwrap_or_else(|_| "user_permissions.csv".to_string());
+        let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let perm_path = cwd.join(perm_file);
+        
+        let csv_content = tokio::fs::read_to_string(&perm_path).await.unwrap_or_else(|_| {
+            warn!("Could not read personnel permissions from {:?}, defaulting to explicit ALLOW ALL", perm_path);
+            "p, *, *, *, allow\n".to_string()
+        });
         for line in csv_content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
