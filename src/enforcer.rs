@@ -17,10 +17,21 @@ impl FileEnforcer {
         let m = DefaultModel::from_str(model_conf).await.unwrap();
         let a = MemoryAdapter::default();
         let e = Enforcer::new(m, a).await.unwrap();
-        
-        Arc::new(Self {
+        let file_enforcer = Arc::new(Self {
             enforcer: RwLock::new(e),
-        })
+        });
+
+        // Try to load file_permissions.txt from current directory
+        if let Ok(cwd) = env::current_dir() {
+            let perm_file = cwd.join("file_permissions.txt");
+            if perm_file.exists() {
+                if let Ok(content) = tokio::fs::read_to_string(perm_file).await {
+                    file_enforcer.load_permissions_from_string(&content).await;
+                }
+            }
+        }
+
+        file_enforcer
     }
 
     /// Loads custom permission syntax and adds them to Casbin.
@@ -162,7 +173,7 @@ impl UserEnforcer {
         let mut e = Enforcer::new(m, a).await.unwrap();
         
         // Load default policies from CSV
-        let csv_content = include_str!("user_permissions.csv");
+        let csv_content = include_str!("../user_permissions.csv");
         for line in csv_content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
