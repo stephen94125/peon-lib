@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use peon_core::agent::PeonAgent;
 use std::io::{self, IsTerminal, Read};
 
 #[derive(Parser, Debug)]
@@ -43,7 +42,11 @@ async fn main() -> Result<()> {
 
     // 4. Initialize Agent
     log::info!("Starting Peon Agent...");
-    let agent = PeonAgent::new().await.context("Failed to initialize PeonAgent")?;
+    let agent = peon_core::agent::PeonAgentBuilder::new()
+        .await
+        .context("Failed to initialize PeonAgent")?
+        .default_prompt()
+        .build();
 
     // 5. Prompt Agent
     log::info!("Dispatching prompt to agent...");

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use peon_core::agent::PeonAgent;
 use teloxide::prelude::*;
 
 #[tokio::main]
@@ -26,8 +25,9 @@ async fn main() -> Result<()> {
             // Instantiate a fresh PeonAgent
             // We instantiate per-message to guarantee strict isolation and empty tool whitelists
             // between requests until long-term memory management is implemented.
-            match PeonAgent::new().await {
-                Ok(agent) => {
+            match peon_core::agent::PeonAgentBuilder::new().await {
+                Ok(builder) => {
+                    let agent = builder.default_prompt().build();
                     match agent.prompt(text).await {
                         Ok(response) => {
                             bot.send_message(msg.chat.id, response).await?;
