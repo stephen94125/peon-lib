@@ -3,7 +3,7 @@
 //! Run with: `RUST_LOG=info cargo run --example simple_agent`
 //! For debug:  `RUST_LOG=debug cargo run --example simple_agent`
 
-use peon_lib::agent::PeonAgent;
+use peon_core::agent::PeonAgent;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

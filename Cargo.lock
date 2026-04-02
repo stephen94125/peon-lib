@@ -1210,7 +1210,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "peon-lib"
+name = "peon-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1226,6 +1226,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "peon-lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "peon-core",
 ]
 
 [[package]]

@@ -3,9 +3,9 @@
 //! These tests set up a full tool pipeline (engine + enforcer + whitelist)
 //! and verify that common attack vectors are blocked at every layer.
 
-use peon_lib::enforcer::FileEnforcer;
-use peon_lib::scanner::{PeonEngine, SkillMeta, scan_skills};
-use peon_lib::tools::{
+use peon_core::enforcer::FileEnforcer;
+use peon_core::scanner::{PeonEngine, SkillMeta, scan_skills};
+use peon_core::tools::{
     ExecuteScriptArgs, ExecuteScriptTool, ReadFileArgs, ReadFileTool, ReadSkillArgs, ReadSkillTool,
 };
 use rig::tool::Tool;
@@ -46,7 +46,7 @@ async fn setup_skill_environment() -> (Arc<PeonEngine>, Arc<Vec<SkillMeta>>, Str
     let skills = Arc::new(skills);
 
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
     let engine = Arc::new(PeonEngine::new(
         Arc::clone(&file_enforcer),
         Arc::clone(&user_enforcer),
@@ -82,7 +82,7 @@ async fn test_path_traversal_read_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ReadFileTool::new(
         Arc::clone(&file_enforcer),
@@ -125,7 +125,7 @@ async fn test_path_traversal_execute_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
@@ -155,7 +155,7 @@ async fn test_rm_rf_root_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
@@ -188,7 +188,7 @@ async fn test_rm_rf_home_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
@@ -218,7 +218,7 @@ async fn test_shell_injection_via_path_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
@@ -257,7 +257,7 @@ async fn test_data_exfiltration_read_etc_passwd_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ReadFileTool::new(
         Arc::clone(&file_enforcer),
@@ -296,7 +296,7 @@ async fn test_null_byte_injection_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ReadFileTool::new(
         Arc::clone(&file_enforcer),
@@ -325,7 +325,7 @@ async fn test_dot_dot_in_whitelisted_context_blocked() {
     let (engine, _, whitelisted_path) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ReadFileTool::new(
         Arc::clone(&file_enforcer),
@@ -369,7 +369,7 @@ async fn test_symlink_escape_blocked() {
     }
 
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
     let engine = Arc::new(PeonEngine::new(
         Arc::clone(&file_enforcer),
         Arc::clone(&user_enforcer),
@@ -410,7 +410,7 @@ async fn test_only_discovered_paths_allowed() {
     let (engine, _, whitelisted_path) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
@@ -466,7 +466,7 @@ async fn test_after_reset_all_paths_blocked() {
     // Now try to use the same path — it must be blocked
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
         Arc::clone(&user_enforcer),
@@ -503,7 +503,7 @@ async fn test_curl_wget_exfiltration_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
     let file_enforcer = FileEnforcer::new().await;
-    let user_enforcer = peon_lib::enforcer::UserEnforcer::new().await;
+    let user_enforcer = peon_core::enforcer::UserEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(
         Arc::clone(&file_enforcer),
