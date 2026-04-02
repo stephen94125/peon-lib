@@ -1,6 +1,6 @@
 use crate::tools::{
     SendLineAudioTool, SendLineImageTool, SendLineLocationTool, SendLineStickerTool,
-    SendLineVideoTool, SharedMessageQueue,
+    SendLineVideoTool,
 };
 use line_bot_sdk_rust::{
     client::LINE,
@@ -8,10 +8,9 @@ use line_bot_sdk_rust::{
         apis::MessagingApiApi,
         models::{Message, ReplyMessageRequest, TextMessage},
     },
-    line_webhook::models::{Event, MessageContent, MessageEvent},
+    line_webhook::models::{Event, MessageContent, MessageEvent, Source},
 };
 use peon_core::agent::PeonAgentBuilder;
-use std::sync::{Arc, Mutex};
 
 pub async fn handle_event(line: &LINE, event: Event) {
     if let Event::MessageEvent(msg_evt) = event {
@@ -21,10 +20,31 @@ pub async fn handle_event(line: &LINE, event: Event) {
     }
 }
 
+/// Extracts the target ID (user, group, or room) from the event source
+fn extract_target_id(source: &Option<Box<Source>>) -> Option<String> {
+    match source {
+        Some(s) => match s.as_ref() {
+            Source::UserSource(u) => u.user_id.clone(),
+            Source::GroupSource(g) => Some(g.group_id.clone()),
+            Source::RoomSource(r) => Some(r.room_id.clone()),
+            _ => None,
+        },
+        None => None,
+    }
+}
+
 async fn handle_message(line: &LINE, event: MessageEvent) {
     let reply_token = match event.reply_token {
         Some(token) => token,
         None => return,
+    };
+
+    let target_id = match extract_target_id(&event.source) {
+        Some(id) => id,
+        None => {
+            log::warn!("Could not extract target ID from event source. Cannot reply.");
+            return;
+        }
     };
 
     let text_input = match *event.message {
@@ -35,16 +55,14 @@ async fn handle_message(line: &LINE, event: MessageEvent) {
         }
     };
 
-    log::info!("Received text from user: {}", text_input);
-
-    let queue: SharedMessageQueue = Arc::new(Mutex::new(Vec::new()));
+    log::info!("Received text from target {}: {}", target_id, text_input);
 
     let builder = match PeonAgentBuilder::new().await {
         Ok(b) => b,
         Err(e) => {
             log::error!("Failed to initialize Agent Foundations: {}", e);
             let req = ReplyMessageRequest {
-                reply_token: reply_token.clone(),
+                reply_token,
                 messages: vec![Message::TextMessage(TextMessage::new(
                     "❌ 系统初始化失败，请检查环境变数与主机权限設定。".to_string(),
                 ))],
@@ -55,23 +73,28 @@ async fn handle_message(line: &LINE, event: MessageEvent) {
         }
     };
 
-    // Inject LINE Tools
+    // Inject LINE Tools (they will use push_message to send asynchronously during reasoning!)
     let agent = builder
         .default_prompt()
         .tool(SendLineImageTool {
-            queue: Arc::clone(&queue),
+            line: line.clone(),
+            target_id: target_id.clone(),
         })
         .tool(SendLineLocationTool {
-            queue: Arc::clone(&queue),
+            line: line.clone(),
+            target_id: target_id.clone(),
         })
         .tool(SendLineVideoTool {
-            queue: Arc::clone(&queue),
+            line: line.clone(),
+            target_id: target_id.clone(),
         })
         .tool(SendLineAudioTool {
-            queue: Arc::clone(&queue),
+            line: line.clone(),
+            target_id: target_id.clone(),
         })
         .tool(SendLineStickerTool {
-            queue: Arc::clone(&queue),
+            line: line.clone(),
+            target_id: target_id.clone(),
         })
         .build();
 
@@ -83,37 +106,17 @@ async fn handle_message(line: &LINE, event: MessageEvent) {
         Err(e) => format!("❌ Agent 执行期发生错误:\n{}", e),
     };
 
-    // Construct final payload
-    let mut messages_to_send: Vec<Message> = Vec::new();
-
-    // Extract all generated rich-media messages from the tool queue
-    if let Ok(mut lock) = queue.lock() {
-        for msg in lock.drain(..) {
-            messages_to_send.push(msg);
-        }
-    }
-
-    // Always push the text response as the final answering bubble if it conveys info
+    // Push the final text response via reply_message.
+    // This resolves the reply_token cleanly while other tools used push_message.
     if !text_response.trim().is_empty() {
-        // Only append if we aren't exceeding the LINE API limit of 5 bubbles per reply
-        if messages_to_send.len() < 5 {
-            messages_to_send.push(Message::TextMessage(TextMessage::new(text_response)));
-        } else {
-            messages_to_send[4] = Message::TextMessage(TextMessage::new(text_response));
+        let req = ReplyMessageRequest {
+            reply_token,
+            messages: vec![Message::TextMessage(TextMessage::new(text_response))],
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = line.messaging_api_client.reply_message(req).await {
+            log::error!("Failed to send LINE reply: {:?}", e);
         }
-    }
-
-    if messages_to_send.is_empty() {
-        return;
-    }
-
-    let req = ReplyMessageRequest {
-        reply_token,
-        messages: messages_to_send,
-        notification_disabled: Some(false),
-    };
-
-    if let Err(e) = line.messaging_api_client.reply_message(req).await {
-        log::error!("Failed to send LINE reply: {:?}", e);
     }
 }

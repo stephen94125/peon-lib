@@ -1,13 +1,10 @@
 use line_bot_sdk_rust::line_messaging_api::models::{
-    AudioMessage, ImageMessage, LocationMessage, Message, StickerMessage, VideoMessage,
+    AudioMessage, ImageMessage, LocationMessage, Message, PushMessageRequest, StickerMessage, VideoMessage
 };
+use line_bot_sdk_rust::line_messaging_api::apis::MessagingApiApi;
+use line_bot_sdk_rust::client::LINE;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-
-/// A thread-safe queue holding LINE messages to be batched into a single reply_message API call.
-/// LINE allows up to 5 messages per reply token.
-pub type SharedMessageQueue = Arc<Mutex<Vec<Message>>>;
 
 // ==========================================
 // Tool Error
@@ -22,6 +19,11 @@ impl ToolCallError {
     }
 }
 
+#[derive(Serialize)]
+pub struct ToolStatusResult {
+    status: String,
+}
+
 // ==========================================
 // 1. SEND IMAGE TOOL
 // ==========================================
@@ -32,13 +34,9 @@ pub struct SendImageArgs {
     preview_image_url: String,
 }
 
-#[derive(Serialize)]
-pub struct ToolStatusResult {
-    status: String,
-}
-
 pub struct SendLineImageTool {
-    pub queue: SharedMessageQueue,
+    pub line: LINE,
+    pub target_id: String,
 }
 
 impl Tool for SendLineImageTool {
@@ -51,7 +49,7 @@ impl Tool for SendLineImageTool {
     async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
         rig::completion::ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "CRITICAL:如果你覺得使用者有看圖片的需求，或是某個技能明確生成了圖片網址（Image URL）並且需要展示給使用者，請『絕對要』選擇這個傳圖片的功能，將圖片發送給客戶。絕對不要只用純文字回覆冗長的 URL，這會嚴重破壞使用體驗！".to_string(),
+            description: "CRITICAL: If the user needs to view an image, or if a skill explicitly generates an image URL intended for the user, you MUST use this tool to display the image directly. NEVER reply with just a pure text URL, as it degrades the user experience.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -72,13 +70,22 @@ impl Tool for SendLineImageTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let msg = Message::ImageMessage(ImageMessage::new(
             args.original_content_url,
-            args.preview_image_url,
+            args.preview_image_url
         ));
 
-        self.queue.lock().unwrap().push(msg);
+        let req = PushMessageRequest {
+            to: self.target_id.clone(),
+            messages: vec![msg],
+            custom_aggregation_units: None,
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = self.line.messaging_api_client.push_message(req, None).await {
+            return Err(ToolCallError::new(format!("Failed to push image: {e}")));
+        }
 
         Ok(ToolStatusResult {
-            status: "Image successfully prepared for sending.".to_string(),
+            status: "Image successfully pushed to the user.".to_string(),
         })
     }
 }
@@ -96,7 +103,8 @@ pub struct SendLocationArgs {
 }
 
 pub struct SendLineLocationTool {
-    pub queue: SharedMessageQueue,
+    pub line: LINE,
+    pub target_id: String,
 }
 
 impl Tool for SendLineLocationTool {
@@ -109,7 +117,7 @@ impl Tool for SendLineLocationTool {
     async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
         rig::completion::ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "MANDATORY:當你需要向使用者分享某個真實地址、經緯度座標或是店家與公司位置時，請『務必』選擇這個原生地位分享功能！這可以讓使用者在手機上直接點擊並開啟地圖導航。千萬不要只把地址當成純文字送出。".to_string(),
+            description: "MANDATORY: When sharing a physical address, coordinates, or store location with the user, you MUST use this native location sharing tool. This allows the user to tap and interact with maps directly. NEVER send an address as just pure text.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -128,13 +136,22 @@ impl Tool for SendLineLocationTool {
             args.title,
             args.address,
             args.latitude,
-            args.longitude,
+            args.longitude
         ));
 
-        self.queue.lock().unwrap().push(msg);
+        let req = PushMessageRequest {
+            to: self.target_id.clone(),
+            messages: vec![msg],
+            custom_aggregation_units: None,
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = self.line.messaging_api_client.push_message(req, None).await {
+            return Err(ToolCallError::new(format!("Failed to push location: {e}")));
+        }
 
         Ok(ToolStatusResult {
-            status: "Location map card successfully prepared for sending.".to_string(),
+            status: "Location card successfully pushed to the user.".to_string(),
         })
     }
 }
@@ -150,7 +167,8 @@ pub struct SendVideoArgs {
 }
 
 pub struct SendLineVideoTool {
-    pub queue: SharedMessageQueue,
+    pub line: LINE,
+    pub target_id: String,
 }
 
 impl Tool for SendLineVideoTool {
@@ -163,7 +181,7 @@ impl Tool for SendLineVideoTool {
     async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
         rig::completion::ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "CRITICAL:當你的對話情境或是某個技能分析出了一段影片並且需要播放給使用者看時，『絕對要』使用此功能發送影片檔案！不要只回傳影片連結。".to_string(),
+            description: "CRITICAL: If the context or a skill generates a video that needs to be shown to the user, you MUST use this tool to send the video file directly! Never reply with just a generic video link.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -178,12 +196,21 @@ impl Tool for SendLineVideoTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let msg = Message::VideoMessage(VideoMessage::new(
             args.original_content_url,
-            args.preview_image_url,
+            args.preview_image_url
         ));
-        self.queue.lock().unwrap().push(msg);
-        Ok(ToolStatusResult {
-            status: "Video prepared.".to_string(),
-        })
+        
+        let req = PushMessageRequest {
+            to: self.target_id.clone(),
+            messages: vec![msg],
+            custom_aggregation_units: None,
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = self.line.messaging_api_client.push_message(req, None).await {
+            return Err(ToolCallError::new(format!("Failed to push video: {e}")));
+        }
+
+        Ok(ToolStatusResult { status: "Video pushed to user.".to_string() })
     }
 }
 
@@ -198,7 +225,8 @@ pub struct SendAudioArgs {
 }
 
 pub struct SendLineAudioTool {
-    pub queue: SharedMessageQueue,
+    pub line: LINE,
+    pub target_id: String,
 }
 
 impl Tool for SendLineAudioTool {
@@ -211,7 +239,7 @@ impl Tool for SendLineAudioTool {
     async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
         rig::completion::ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "CRITICAL:如果使用者要求聽取聲音、或是你生成了一段音檔 (Audio)，『必須』使用此功能發送語音訊息給使用者收聽！".to_string(),
+            description: "CRITICAL: If the user requests to listen to an audio, or if you generate an audio file, you MUST use this tool to send the voice message directly to the user for playback!".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -224,12 +252,23 @@ impl Tool for SendLineAudioTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let msg =
-            Message::AudioMessage(AudioMessage::new(args.original_content_url, args.duration));
-        self.queue.lock().unwrap().push(msg);
-        Ok(ToolStatusResult {
-            status: "Audio prepared.".to_string(),
-        })
+        let msg = Message::AudioMessage(AudioMessage::new(
+            args.original_content_url,
+            args.duration
+        ));
+        
+        let req = PushMessageRequest {
+            to: self.target_id.clone(),
+            messages: vec![msg],
+            custom_aggregation_units: None,
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = self.line.messaging_api_client.push_message(req, None).await {
+            return Err(ToolCallError::new(format!("Failed to push audio: {e}")));
+        }
+
+        Ok(ToolStatusResult { status: "Audio pushed to user.".to_string() })
     }
 }
 
@@ -244,7 +283,8 @@ pub struct SendStickerArgs {
 }
 
 pub struct SendLineStickerTool {
-    pub queue: SharedMessageQueue,
+    pub line: LINE,
+    pub target_id: String,
 }
 
 impl Tool for SendLineStickerTool {
@@ -257,7 +297,7 @@ impl Tool for SendLineStickerTool {
     async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
         rig::completion::ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "OPTIONAL_BUT_RECOMMENDED:當你想要表達強烈的情感、打招呼、慶祝成功、或是想展現活潑的人格魅力時，請『踴躍』使用這個發送貼圖的功能！這能大幅增加使用者的好感度喔！".to_string(),
+            description: "OPTIONAL_BUT_RECOMMENDED: When you want to convey strong emotion, greet, celebrate a success, or show a vibrant personality, use this tool to send an engaging sticker! This significantly increases user affinity.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -270,10 +310,36 @@ impl Tool for SendLineStickerTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let msg = Message::StickerMessage(StickerMessage::new(args.package_id, args.sticker_id));
-        self.queue.lock().unwrap().push(msg);
-        Ok(ToolStatusResult {
-            status: "Sticker prepared.".to_string(),
-        })
+        let msg = Message::StickerMessage(StickerMessage::new(
+            args.package_id,
+            args.sticker_id
+        ));
+
+        let req = PushMessageRequest {
+            to: self.target_id.clone(),
+            messages: vec![msg],
+            custom_aggregation_units: None,
+            notification_disabled: Some(false),
+        };
+
+        if let Err(e) = self.line.messaging_api_client.push_message(req, None).await {
+            return Err(ToolCallError::new(format!("Failed to push sticker: {e}")));
+        }
+
+        Ok(ToolStatusResult { status: "Sticker pushed to user.".to_string() })
     }
 }
+
+// ==========================================
+// TODO / Pending Tools
+// ==========================================
+// 
+// 1. Coupon Message: Waiting for implementation
+//    - Needs Coupon API specifics.
+// 2. Imagemap Message: Waiting for implementation
+//    - Needs coordinate and map mapping details.
+// 3. Flex Message: Waiting for implementation
+//    - Needs extensive JSON dynamic construction template builder.
+// 4. Template Message: DEPRECATED / LOW PRIORITY 
+//    - The LINE API has largely superseded Template messages with Flex messages or plain text + Quick Reply.
+//    - We will stick to Flex message later, so template message support may be skipped.
