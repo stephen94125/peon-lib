@@ -932,7 +932,7 @@ Then run ./scripts/deploy.sh again.
 
     #[tokio::test]
     async fn test_generate_tool_schemas_minimal() {
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = PeonEngine::new(enforcer);
         let skills = vec![SkillMeta {
             name: "pdf-processing".to_string(),
@@ -1039,7 +1039,7 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = PeonEngine::new(Arc::clone(&enforcer));
 
         // Content references the script path
@@ -1077,7 +1077,7 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = PeonEngine::new(Arc::clone(&enforcer));
 
         engine
@@ -1109,7 +1109,7 @@ Then run ./scripts/deploy.sh again.
             .await
             .unwrap();
 
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = PeonEngine::new(Arc::clone(&enforcer));
 
         engine

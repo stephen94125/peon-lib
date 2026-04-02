@@ -45,7 +45,7 @@ async fn setup_skill_environment() -> (Arc<PeonEngine>, Arc<Vec<SkillMeta>>, Str
         .unwrap();
     let skills = Arc::new(skills);
 
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
     let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
 
     // Simulate the agent calling read_skill (populates whitelists)
@@ -77,7 +77,7 @@ async fn setup_skill_environment() -> (Arc<PeonEngine>, Arc<Vec<SkillMeta>>, Str
 async fn test_path_traversal_read_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ReadFileTool::new(enforcer, read_paths);
 
@@ -115,7 +115,7 @@ async fn test_path_traversal_read_blocked() {
 async fn test_path_traversal_execute_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
@@ -140,7 +140,7 @@ async fn test_path_traversal_execute_blocked() {
 async fn test_rm_rf_root_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
@@ -168,7 +168,7 @@ async fn test_rm_rf_root_blocked() {
 async fn test_rm_rf_home_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
@@ -193,7 +193,7 @@ async fn test_rm_rf_home_blocked() {
 async fn test_shell_injection_via_path_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
@@ -227,7 +227,7 @@ async fn test_shell_injection_via_path_blocked() {
 async fn test_data_exfiltration_read_etc_passwd_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ReadFileTool::new(enforcer, read_paths);
 
@@ -261,7 +261,7 @@ async fn test_data_exfiltration_read_etc_passwd_blocked() {
 async fn test_null_byte_injection_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ReadFileTool::new(enforcer, read_paths);
 
@@ -285,7 +285,7 @@ async fn test_null_byte_injection_blocked() {
 async fn test_dot_dot_in_whitelisted_context_blocked() {
     let (engine, _, whitelisted_path) = setup_skill_environment().await;
     let read_paths = Arc::clone(&engine.read_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ReadFileTool::new(enforcer, read_paths);
 
@@ -324,7 +324,7 @@ async fn test_symlink_escape_blocked() {
         std::os::unix::fs::symlink("/etc/passwd", skill_dir.join("scripts/data.txt")).unwrap();
     }
 
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
     let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
 
     // process_skill_content should resolve the symlink via canonicalize
@@ -361,7 +361,7 @@ async fn test_symlink_escape_blocked() {
 async fn test_only_discovered_paths_allowed() {
     let (engine, _, whitelisted_path) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
@@ -412,7 +412,7 @@ async fn test_after_reset_all_paths_blocked() {
 
     // Now try to use the same path — it must be blocked
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 
     let result = tool
@@ -444,7 +444,7 @@ async fn test_after_reset_all_paths_blocked() {
 async fn test_curl_wget_exfiltration_blocked() {
     let (engine, _, _) = setup_skill_environment().await;
     let execute_paths = Arc::clone(&engine.execute_paths);
-    let enforcer = FileEnforcer::new();
+    let enforcer = FileEnforcer::new().await;
 
     let tool = ExecuteScriptTool::new(enforcer, execute_paths);
 

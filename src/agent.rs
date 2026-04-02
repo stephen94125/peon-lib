@@ -72,7 +72,7 @@ impl PeonAgent {
         debug!("Skills XML catalog:\n{}", skills_xml);
 
         // Phase 2: Engine + whitelists
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
         let read_paths = Arc::clone(&engine.read_paths);
         let execute_paths = Arc::clone(&engine.execute_paths);

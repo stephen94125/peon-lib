@@ -501,7 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_rejects_path_not_in_whitelist() {
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
             std::collections::HashSet::new(),
         ));
@@ -525,7 +525,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_script_rejects_path_not_in_whitelist() {
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
             std::collections::HashSet::new(),
         ));
@@ -562,7 +562,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let read_paths: SharedReadPaths = Arc::new(tokio::sync::RwLock::new(
             std::collections::HashSet::new(),
         ));
@@ -604,7 +604,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let execute_paths: SharedExecutePaths = Arc::new(tokio::sync::RwLock::new(
             std::collections::HashSet::new(),
         ));
@@ -636,7 +636,7 @@ mod tests {
             description: "Roll dice.".to_string(),
             location: "/tmp/roll-dice/SKILL.md".to_string(),
         }]);
-        let enforcer = FileEnforcer::new();
+        let enforcer = FileEnforcer::new().await;
         let engine = Arc::new(PeonEngine::new(Arc::clone(&enforcer)));
 
         let tool = ReadSkillTool::new(skills, engine);
@@ -699,7 +699,7 @@ mod proptests {
         fn read_file_rejects_any_random_path(path in "\\PC+") {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let enforcer = FileEnforcer::new();
+                let enforcer = FileEnforcer::new().await;
                 let read_paths: SharedReadPaths = Arc::new(
                     tokio::sync::RwLock::new(std::collections::HashSet::new()),
                 );
@@ -718,7 +718,7 @@ mod proptests {
         fn execute_script_rejects_any_random_path(path in "\\PC+") {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let enforcer = FileEnforcer::new();
+                let enforcer = FileEnforcer::new().await;
                 let execute_paths: SharedExecutePaths = Arc::new(
                     tokio::sync::RwLock::new(std::collections::HashSet::new()),
                 );
