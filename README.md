@@ -18,7 +18,7 @@ This repository is a Cargo Workspace containing the following crates:
 
 - **[`peon-core`](peon-core/README.md)**: The heart of the zero-trust engine. Includes tools, scanning architecture, and Casbin access enforcement. **(Start here to use the framework!)**
 - **[`peon-cli`](peon-cli/README.md)**: Universal CLI entry point to bridge your terminal usage and pipelines (`echo "data" | peon-cli`) with the AI core.
-- *`peon-discord / peon-telegram` (Planned)*: Chat platform integrations.
+- **[`peon-telegram`](peon-telegram/README.md)**: A robust integration crate that turns the local Peon engine into a multi-user Telegram bot.
 
 ## 🧠 Provider Agnostic
 

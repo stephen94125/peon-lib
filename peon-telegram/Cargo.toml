@@ -1,19 +1,16 @@
-[workspace]
-members = ["peon-core", "peon-cli", "peon-telegram"]
-
 [package]
-name = "peon-lib"
+name = "peon-telegram"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
-[lib]
-name = "peon_lib"
-path = "src/lib.rs"
-
 [dependencies]
-peon-core = { path = "peon-core" }
+peon-core = { path = "../peon-core" }
 anyhow = "1.0.98"
+log = "0.4"
+env_logger = "0.11"
+tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
+teloxide = { version = "0.13", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
 
 [features]
 default = ["peon-core/default"]
@@ -36,24 +33,4 @@ openrouter = ["peon-core/openrouter"]
 perplexity = ["peon-core/perplexity"]
 together = ["peon-core/together"]
 xai = ["peon-core/xai"]
-all = [
-    "anthropic",
-    "azure",
-    "cohere",
-    "deepseek",
-    "galadriel",
-    "gemini",
-    "groq",
-    "huggingface",
-    "hyperbolic",
-    "llamafile",
-    "mira",
-    "mistral",
-    "moonshot",
-    "ollama",
-    "openai",
-    "openrouter",
-    "perplexity",
-    "together",
-    "xai",
-]
+all = ["peon-core/all"]
