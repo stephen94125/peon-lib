@@ -1,0 +1,46 @@
+# PeonAgent Permissions Example File
+#
+# This file uses a simplified custom syntax that is automatically compiled into
+# a strict Casbin (Deny-Override) model under the hood.
+# Format: [Action], [Path]
+#
+# - Actions supported: r (read), w (write), x (execute)
+# - Multiplexing allowed: rx, rwx
+# - Deny overriding: Prefix the action with "!" to explicitly deny, e.g., !r
+# - Wildcards: If a path ends with "/", it allows access to all descendant files implicitly.
+# - Relative paths: Paths starting with ./ or ../ are automatically aligned to the Current Working Directory (CWD).
+
+# ---------------------------------------------------------
+# 1. Exact Match Permissions
+# ---------------------------------------------------------
+r, /home/user/workspace/data.json
+w, /home/user/workspace/output.log
+rx, /home/user/workspace/script.sh
+
+# ---------------------------------------------------------
+# 2. Directory Wildcard Permissions
+# ---------------------------------------------------------
+# Allows reading ALL files and directories under the skills directory
+r, ./skills/
+
+# Allows executing any program within the local bin directory
+x, /usr/local/bin/
+
+# ---------------------------------------------------------
+# 3. Deny-Override and Isolation
+# ---------------------------------------------------------
+# Deny rules ALWAYS take precedence. Even if the rule above allowed reading ./skills/,
+# if an explicit deny rule hits, access is irrevocably blocked.
+!r, ./skills/core/secret_api_keys.json
+
+# Demonstrating Action Isolation (allow read, explicitly deny execution)
+r, /home/user/Downloads/
+!x, /home/user/Downloads/
+
+# ---------------------------------------------------------
+# 4. Relative Path Aligning
+# ---------------------------------------------------------
+# The underlying engine automatically maps these to the absolute CWD
+# of where the PeonAgent was launched. It handles path normalization
+# so it works perfectly even if the target directories do not exist yet.
+rx, ./tmp/agent_runtime/

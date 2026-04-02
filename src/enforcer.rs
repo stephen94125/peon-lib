@@ -57,8 +57,23 @@ impl FileEnforcer {
                 path_buf = cwd.join(path_buf);
             }
 
-            // Canonicalize if possible to align with scanner, else use raw absolute
-            let resolved_path = path_buf.canonicalize().unwrap_or(path_buf);
+            // Normalization helper for paths that might not exist yet
+            fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+                use std::path::{Component, PathBuf};
+                let mut ret = PathBuf::new();
+                for component in path.components() {
+                    match component {
+                        Component::Prefix(..) | Component::RootDir => ret.push(component.as_os_str()),
+                        Component::CurDir => {}
+                        Component::ParentDir => { ret.pop(); }
+                        Component::Normal(c) => ret.push(c),
+                    }
+                }
+                ret
+            }
+
+            // Clean the path elements even if canonicalize fails
+            let resolved_path = path_buf.canonicalize().unwrap_or_else(|_| normalize_path(&path_buf));
             let mut resolved_str = resolved_path.to_string_lossy().to_string();
 
             // Directory / Wildcard handling: if original path ends with '/', append '/*' to absolute
