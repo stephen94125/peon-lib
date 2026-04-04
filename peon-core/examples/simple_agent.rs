@@ -14,7 +14,10 @@ async fn main() -> anyhow::Result<()> {
     let user_input = "Roll a 20-sided die for me";
     log::info!("User input: {}", user_input);
 
-    let response = agent.prompt(user_input).await?;
+    use peon_core::tools::CURRENT_UID;
+    let response = CURRENT_UID.scope("agent".to_string(), async {
+        agent.prompt(user_input).await
+    }).await?;
     log::info!("Agent response: {}", response);
 
     Ok(())

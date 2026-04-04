@@ -9,6 +9,13 @@ use serde::Deserialize;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::process::Command;
+use tokio::task_local;
+
+task_local! {
+    /// The User ID used for security enforcement by Peon tools in the current tokio task.
+    /// If not explicitly set via `CURRENT_UID.scope(...)`, tools will default to `"agent"`.
+    pub static CURRENT_UID: String;
+}
 
 // ==========================================
 // Shared error type for all tools
@@ -200,10 +207,14 @@ impl Tool for ReadFileTool {
 
         // === Layer 2: Enforcer check (Casbin-ready) ===
         // Using double-check approach: Ask UserEnforcer, then FileEnforcer.
-        // Currently hardcoding user="agent" until ctx provides the actual user id.
+        // Dynamically grab the user ID bound to the current tokio task, or default to "agent"
+        let current_uid = CURRENT_UID
+            .try_with(|uid| uid.clone())
+            .unwrap_or_else(|_| "agent".to_string());
+
         let user_ok = self
             .user_enforcer
-            .enforce("agent", "read", &args.path)
+            .enforce(&current_uid, "read", &args.path)
             .await;
         if !user_ok {
             warn!("Read access DENIED by USER enforcer for: {}", args.path);
@@ -370,9 +381,14 @@ impl Tool for ExecuteScriptTool {
 
         // === Layer 2: Enforcer check (Casbin-ready) ===
         // Using double-check approach: Ask UserEnforcer, then FileEnforcer.
+        // Dynamically grab the user ID bound to the current tokio task, or default to "agent"
+        let current_uid = CURRENT_UID
+            .try_with(|uid| uid.clone())
+            .unwrap_or_else(|_| "agent".to_string());
+
         let user_ok = self
             .user_enforcer
-            .enforce("agent", "execute", &args.path)
+            .enforce(&current_uid, "execute", &args.path)
             .await;
         if !user_ok {
             warn!("Execute access DENIED by USER enforcer for: {}", args.path);

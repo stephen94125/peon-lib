@@ -51,7 +51,10 @@ async fn main() -> Result<()> {
     // 5. Prompt Agent
     log::info!("Dispatching prompt to agent...");
     log::debug!("Prompt payload length: {} characters", input.len());
-    let response = agent.prompt(&input).await.context("Agent execution failed")?;
+    use peon_core::tools::CURRENT_UID;
+    let response = CURRENT_UID.scope("agent".to_string(), async {
+        agent.prompt(&input).await
+    }).await.context("Agent execution failed")?;
 
     // 6. Return purely to STDOUT
     // We use print! or println! here because it writes to STDOUT explicitly. 
