@@ -1,5 +1,5 @@
 [workspace]
-members = ["peon-core", "peon-cli", "peon-telegram", "peon-line"]
+members = ["peon-core", "peon-cli", "peon-telegram"]
 
 [package]
 name = "peon-lib"
