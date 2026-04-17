@@ -1,4 +1,4 @@
-# Peon Telegram 
+# Peon Telegram
 
 [🇨🇳 简体中文](README.zh.md) | [🇬🇧 English](README.md)
 
@@ -11,23 +11,27 @@ It listens for incoming chat messages and routes them through the native securit
 To turn your isolated local agent into a live Telegram bot, follow these steps:
 
 **1. Install Peon Telegram via Cargo**
+
 ```bash
 cargo install peon-telegram
 ```
 
 **2. Initialize your workspace**
 Navigate to the directory where you want your bot to live, and run the initialization command. This safely creates a `.env` file, the `skills/` directory, and default 'Allow All' permission files.
+
 ```bash
 peon-telegram --init
 ```
 
 **3. Configure your Tokens**
+
 1. Request a new Bot Token from [@BotFather](https://t.me/botfather) on Telegram.
 2. Edit the newly generated `.env` file to include your tokens:
+
    ```dotenv
    DEFAULT_PROVIDER="openai" # Or gemini, anthropic...
    OPENAI_API_KEY="sk-..."
-   
+
    # Add your Telegram Token here:
    TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
    ```
@@ -39,6 +43,7 @@ peon-telegram --init
 > Permission files (`file_permissions.txt` & `user_permissions.csv`) are actively enforced. Be sure to modify the auto-generated ones to restrict access for production!
 
 **4. Run the bot!**
+
 ```bash
 RUST_LOG=info peon-telegram
 ```
@@ -49,7 +54,32 @@ For this first version, **all Telegram chats are 100% ephemeral and isolated**.
 
 Every single message received spins up a completely fresh `PeonAgent`, resolving whitelist policies anew. This guarantees that if User A extracts a skill or authorizes a path, User B cannot indirectly trigger it.
 
-*Long-term memory is currently disabled for security reasons until individual user context management is built.*
+### Assigning Role Permissions to Telegram Users
+
+By default, the `--init` command generates a permissive policy (`p, *, *, *, allow`) allowing anyone to do anything. In a real-world scenario, you will want to restrict access to yourself or your team.
+
+You can find a user's unique Telegram Chat ID by looking at your application's console loop when they send a message, for example:
+
+```log
+[INFO  peon_telegram] Received message from chat ID 6649983588: Hello robot
+```
+
+Once you have the ID, you can configure `user_permissions.csv` to grant them specific roles or permissions. For example, to make them an admin:
+
+```csv
+# user_permissions.csv
+
+# 1. Deny everyone by default (or do nothing and let implicit deny handle it)
+p, *, *, *, deny
+
+# 2. Assign the Telegram Chat ID '6649983588' to the 'admin' role
+g, 6649983588, admin
+
+# 3. Grant the 'admin' role total access
+p, admin, *, *, allow
+```
+
+_Long-term memory is currently disabled for security reasons until individual user context management is built._
 
 ---
 

@@ -17,7 +17,12 @@ async fn main() -> Result<()> {
 
     log::info!("🚀 Starting Peon Telegram Bot...");
 
-    // 2. Initialize Telegram Bot from TELOXIDE_TOKEN environment variable
+    // 2. Pre-flight Security & Environment Check
+    // We instantiate it once before the loop to fail-fast if Casbin permissions 
+    // or AI tokens are missing.
+    let _ = peon_core::agent::PeonAgentBuilder::new().await?;
+
+    // 3. Initialize Telegram Bot from TELOXIDE_TOKEN environment variable
     let bot = Bot::from_env();
 
     // 3. Start single-threaded REPL processing incoming messages

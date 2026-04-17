@@ -1,4 +1,4 @@
-# Peon Telegram 
+# Peon Telegram
 
 [🇨🇳 简体中文](README.zh-CN.md) | [🇬🇧 English](README.md)
 
@@ -11,23 +11,27 @@
 想把你本机的纯净 Agent 转变成一个随时待命的 Telegram 机器人，只需以下几步：
 
 **1. 透过 Cargo 安装 Peon Telegram**
+
 ```bash
 cargo install peon-telegram
 ```
 
 **2. 初始化工作区环境**
 在你想运行机器人的目录下输入初始化指令，系统会自动帮你建立干净的 `.env` 设定档、`skills/` 技能目录，以及全开预设的安全权限表。
+
 ```bash
 peon-telegram --init
 ```
 
 **3. 配置密钥与 Token**
+
 1. 在 Telegram 上找到 [@BotFather](https://t.me/botfather) 并申请一个新的 Bot Token。
 2. 打开刚刚自动生成的 `.env` 档案，填上你的 Token：
+
    ```dotenv
    DEFAULT_PROVIDER="openai" # 或者 gemini, anthropic...
    OPENAI_API_KEY="sk-..."
-   
+
    # 把你在 Telegram 申请到的 Token 贴在这里：
    TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
    ```
@@ -39,6 +43,7 @@ peon-telegram --init
 > 机器人高度仰赖目录下的 `file_permissions.txt` 与 `user_permissions.csv` 才能执行 `--init` 预设提供的是无防护的允许所有设定，**请务必在正式上线前修饰与收紧！**
 
 **4. 运行！**
+
 ```bash
 RUST_LOG=info peon-telegram
 ```
@@ -49,7 +54,32 @@ RUST_LOG=info peon-telegram
 
 我们对于每一条收到的新消息，都会在后台生成一个崭新的 `PeonAgent` 并重新载入 Casbin 白名单。这意味着即使“用户 A”解锁了能够开启某个高危技能的路径权限，“用户 B”也绝对无法通过接力触发该行径。
 
-*出于最严苛的安全考量，直到我们把「基于 User-ID 切分的缓存状态树」开发完毕前，Agent 会被禁止拥有上下文记忆。*
+### 给 Telegram 用户分配具体权限
+
+预设的 `--init` 指令会生成宽松的政策 (`p, *, *, *, allow`) 允许所有人生效。实际上正式上线后，你会希望限制只有你自己或团队成员能使用。
+
+正如上方的执行记录，你可以从后台观察当使用者发讯息过来时所跳出的 Log，来获取该使用者专属的 Telegram UID (Chat ID)：
+
+```log
+[INFO  peon_telegram] Received message from chat ID 6649983588: 幫我丟一個128面的
+```
+
+拿到这个 `6649983588` 的唯一标识 UID 后，你就能轻易地进入 `user_permissions.csv` 为他量身打造专属规则啦！示范如下：
+
+```csv
+# user_permissions.csv
+
+# 1. 强制 Deny 掉未知的散客（预设的 default fall-back）
+p, *, *, *, deny
+
+# 2. 把刚刚从控制台获得的 Telegram UID (6649983588) 赋予 'admin_role' 管理员角色
+g, 6649983588, admin_role
+
+# 3. 让所有属于 admin_role 的使用者拥有最高开火权限
+p, admin_role, *, *, allow
+```
+
+_出于最严苛的安全考量，直到我们把「基于 User-ID 切分的缓存状态树」开发完毕前，Agent 会被禁止拥有上下文记忆。_
 
 ---
 
