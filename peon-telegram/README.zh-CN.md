@@ -10,31 +10,38 @@
 
 想把你本机的纯净 Agent 转变成一个随时待命的 Telegram 机器人，只需以下几步：
 
+**1. 透过 Cargo 安装 Peon Telegram**
+```bash
+cargo install peon-telegram
+```
+
+**2. 初始化工作区环境**
+在你想运行机器人的目录下输入初始化指令，系统会自动帮你建立干净的 `.env` 设定档、`skills/` 技能目录，以及全开预设的安全权限表。
+```bash
+peon-telegram --init
+```
+
+**3. 配置密钥与 Token**
 1. 在 Telegram 上找到 [@BotFather](https://t.me/botfather) 并申请一个新的 Bot Token。
-2. 在工作区根目录的 `.env` 档案中，填上你的 Token：
-   ```bash
-   export DEFAULT_PROVIDER="openai" # 或者 gemini, anthropic...
-   export OPENAI_API_KEY="sk-..."
+2. 打开刚刚自动生成的 `.env` 档案，填上你的 Token：
+   ```dotenv
+   DEFAULT_PROVIDER="openai" # 或者 gemini, anthropic...
+   OPENAI_API_KEY="sk-..."
    
    # 把你在 Telegram 申请到的 Token 贴在这里：
-   export TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
+   TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
    ```
 
 > [!TIP]
 > 系統預設會從 **`./skills`** 目錄（而非 `./.skills`）讀取技能資訊。請確保您的技能資料夾路徑正確，或透過環境變數指定。
 
 > [!WARNING]
-> 机器人需要目录下的 `file_permissions.txt` 与 `user_permissions.csv` 才能启动。您也可以透过环境变量自定义位置。
+> 机器人高度仰赖目录下的 `file_permissions.txt` 与 `user_permissions.csv` 才能执行 `--init` 预设提供的是无防护的允许所有设定，**请务必在正式上线前修饰与收紧！**
 
-3. **初始化环境** (自动建立缺少的 `.env` 档案、`./skills` 目录与全开预设的权限管理表)：
-   ```bash
-   cargo run -p peon-telegram -- --init
-   ```
-
-4. 运行！
-   ```bash
-   RUST_LOG=info cargo run --release -p peon-telegram
-   ```
+**4. 运行！**
+```bash
+RUST_LOG=info peon-telegram
+```
 
 ## 🔐 严格的会话隔离战略
 
@@ -55,3 +62,20 @@
 - [ ] **图像视觉与文件分析**: 支持直接传输照片、PDF 和工程代码文件给机器人。Peon 将直接在沙箱内获取这些文件，作为 Agent 的环境上下文进行答疑与侦错。
 - [ ] **互动键盘回调 (Inline Buttons)**: 当 Agent 判断下一步将涉及危险度极高的动作时（例如删库），除了 Casbin 鉴权外，将直接利用 Teloxide 的 Inline Keyboard 向用户的手机端扔出含有 `[安全放行] [立即拦截]` 按钮的操作卡片。
 - [ ] **跨对话状态长驻**: 在确立更深度的安全隔离基准后，利用系统自带的 Casbin 体系为不同用户的对话窗口保留上下文进度与历史对答。
+
+---
+
+## 💻 开发者与源码贡献 (Contributing)
+
+若您是开发者，或是想直接由源码进行编译与贡献：
+
+```bash
+git clone https://github.com/stephen94125/peon-lib.git
+cd peon-lib
+
+# 初始化测试工作区
+cargo run -p peon-telegram -- --init
+
+# 直接从源码运行
+RUST_LOG=info cargo run --release -p peon-telegram
+```
