@@ -9,6 +9,12 @@ async fn main() -> Result<()> {
         .format_timestamp_millis()
         .init();
 
+    // Handle workspace initialization
+    if std::env::args().any(|arg| arg == "--init" || arg == "-i") {
+        peon_core::setup::init_workspace().await?;
+        return Ok(());
+    }
+
     log::info!("🚀 Starting Peon Telegram Bot...");
 
     // 2. Initialize Telegram Bot from TELOXIDE_TOKEN environment variable

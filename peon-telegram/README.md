@@ -26,7 +26,12 @@ To turn your isolated local agent into a live Telegram bot, follow these steps:
 > [!WARNING]
 > Permission files (`file_permissions.txt` & `user_permissions.csv`) are required in the working directory. Override via `PEON_FILE_PERMISSIONS` and `PEON_USER_PERMISSIONS` if needed.
 
-3. Run the bot!
+3. **Initialize the workspace** (Creates `.env`, `./skills` directory, and default 'Allow All' permission files):
+   ```bash
+   cargo run -p peon-telegram -- --init
+   ```
+
+4. Run the bot!
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram
    ```

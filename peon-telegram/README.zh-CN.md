@@ -26,7 +26,12 @@
 > [!WARNING]
 > 机器人需要目录下的 `file_permissions.txt` 与 `user_permissions.csv` 才能启动。您也可以透过环境变量自定义位置。
 
-3. 运行！
+3. **初始化环境** (自动建立缺少的 `.env` 档案、`./skills` 目录与全开预设的权限管理表)：
+   ```bash
+   cargo run -p peon-telegram -- --init
+   ```
+
+4. 运行！
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram
    ```
