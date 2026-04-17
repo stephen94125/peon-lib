@@ -7,7 +7,7 @@ description = "The interactive Unix-style command-line interface for the zero-tr
 repository = "https://github.com/stephen94125/peon-lib"
 
 [dependencies]
-peon-core = { version = "0.1.0" }
+peon-core = { version = "0.1.4" }
 anyhow = "1.0.98"
 log = "0.4"
 env_logger = "0.11"
