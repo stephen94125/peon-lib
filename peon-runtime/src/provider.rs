@@ -134,3 +134,23 @@ pub trait CompletionProvider: Send + Sync {
         request: CompletionRequest,
     ) -> BoxFuture<'a, Result<CompletionResponse, CompletionError>>;
 }
+
+// Blanket implementations for smart pointers, enabling dynamic dispatch.
+
+impl CompletionProvider for Box<dyn CompletionProvider> {
+    fn complete<'a>(
+        &'a self,
+        request: CompletionRequest,
+    ) -> BoxFuture<'a, Result<CompletionResponse, CompletionError>> {
+        (**self).complete(request)
+    }
+}
+
+impl CompletionProvider for std::sync::Arc<dyn CompletionProvider> {
+    fn complete<'a>(
+        &'a self,
+        request: CompletionRequest,
+    ) -> BoxFuture<'a, Result<CompletionResponse, CompletionError>> {
+        (**self).complete(request)
+    }
+}

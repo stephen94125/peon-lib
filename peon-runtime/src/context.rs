@@ -17,11 +17,11 @@ use std::collections::HashMap;
 /// ```
 /// use peon_runtime::RequestContext;
 ///
-/// let ctx = RequestContext::new("7444174610")
+/// let ctx = RequestContext::new("5797792592")
 ///     .with_metadata("chat_type", "group")
 ///     .with_metadata("platform", "telegram");
 ///
-/// assert_eq!(ctx.uid(), "7444174610");
+/// assert_eq!(ctx.uid(), "5797792592");
 /// assert_eq!(ctx.get_metadata("chat_type"), Some("group"));
 /// ```
 #[derive(Debug, Clone)]

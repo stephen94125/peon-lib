@@ -37,12 +37,11 @@
 //!
 //! ```rust,ignore
 //! use peon_runtime::*;
+//! use peon_runtime::providers::openai::OpenAiProvider;
 //!
-//! // 1. Implement CompletionProvider for your LLM backend
-//! // 2. Implement PeonTool for your tools
-//! // 3. Build and run the agent
+//! let provider = OpenAiProvider::new("gpt-4o", "sk-...");
 //!
-//! let agent = AgentLoop::builder(my_provider)
+//! let agent = AgentLoop::builder(provider)
 //!     .system_prompt("You are a helpful assistant.")
 //!     .tool(my_tool)
 //!     .max_turns(10)
@@ -55,7 +54,7 @@
 //!
 //! ## Feature Flags
 //!
-//! - `native` (default): Enables native platform support.
+//! - `native` (default): Enables HTTP-based providers (OpenAI, Anthropic, Gemini) via `reqwest`.
 //! - `wasm`: Reserved for future WebAssembly support.
 
 pub mod agent;
@@ -65,10 +64,15 @@ pub mod message;
 pub mod provider;
 pub mod tool;
 
-// Re-export primary types at the crate root for ergonomic imports.
+#[cfg(feature = "native")]
+pub mod providers;
+
+// Re-export agent-facing types at the crate root.
+// CompletionProvider is re-exported because AgentLoop::builder() needs it.
+// CompletionRequest/Response are NOT re-exported — use providers::* directly.
 pub use agent::{AgentLoop, AgentLoopBuilder, AgentResponse};
 pub use context::RequestContext;
 pub use error::{AgentError, CompletionError, ToolError};
 pub use message::{AssistantContent, ContentPart, Message};
-pub use provider::{CompletionProvider, CompletionRequest, CompletionResponse, Usage};
+pub use provider::CompletionProvider;
 pub use tool::{BoxFuture, PeonTool, ToolDefinition};

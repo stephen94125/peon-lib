@@ -29,6 +29,7 @@ Everything else in `rig` (ToolServer, AgentBuilder type-state, PromptHooks, RAG 
 > We **keep `rig-core` as a dependency** solely for `PeonModel` (our multi-provider enum dispatch). This is the only piece that is genuinely complex and not worth rewriting. We stop using `rig`'s `Agent`, `AgentBuilder`, `Tool` trait, and `ToolServer` entirely.
 
 Specifically, we continue using:
+
 - `rig::completion::CompletionModel` — the trait that `PeonModel` implements
 - `rig::completion::CompletionRequest` — the request struct we build manually
 - `rig::completion::CompletionResponse` — what comes back from the LLM
@@ -37,6 +38,7 @@ Specifically, we continue using:
 - `rig::message::*` — `AssistantContent`, `UserContent`, `ToolCall`, etc.
 
 We **delete** usage of:
+
 - `rig::agent::Agent`
 - `rig::agent::AgentBuilder`
 - `rig::tool::Tool` (replaced by our own `PeonTool` trait)
@@ -56,18 +58,18 @@ graph TD
 
     subgraph "Per-Request (Ephemeral)"
         PE["PeonEngine (fresh whitelists)"]
-        
+
         subgraph "Tools (uid hardcoded)"
             T1["ReadSkillTool { uid }"]
             T2["ReadFileTool { uid }"]
             T3["ExecuteScriptTool { uid }"]
             T4["ListAllSkillsTool"]
         end
-        
+
         AL["AgentLoop"]
     end
 
-    Webhook["Telegram Webhook (uid=7444174610)"] --> AL
+    Webhook["Telegram Webhook (uid=5797792592)"] --> AL
     AL -->|"1. Build CompletionRequest"| PM
     PM -->|"2. LLM Response"| AL
     AL -->|"3a. tool_call → dispatch directly"| T1
@@ -93,12 +95,12 @@ sequenceDiagram
     participant Casbin as UserEnforcer
 
     TG->>Loop: prompt("骰128面", uid="744...")
-    
+
     loop max_turns
         Loop->>Loop: Build CompletionRequest<br/>(system + history + tools JSON)
         Loop->>LLM: model.completion(request)
         LLM-->>Loop: CompletionResponse
-        
+
         alt Response has tool_calls
             loop for each tool_call
                 Loop->>Tool: tool.call(args, &context)
@@ -234,13 +236,13 @@ peon-core/src/
 
 ## What This Buys Us
 
-| Problem | rig | Peon Runtime |
-|---|---|---|
-| UID propagation to tools | ❌ Impossible (ToolServer severs task-local) | ✅ `ctx: &RequestContext` in every `call()` |
-| Concurrent user isolation | ❌ RwLock race condition | ✅ Each request has its own `RequestContext` |
-| Chat history management | ❌ Not built-in (must reinvent) | ✅ First-class `chat_history: &[Message]` parameter |
-| Code complexity | ~5000 LOC across 15+ files | ~200 LOC across 2 new files |
-| Debugging | Opaque ToolServer + tracing spans | Direct `log::info!` in a flat loop |
+| Problem                   | rig                                          | Peon Runtime                                        |
+| ------------------------- | -------------------------------------------- | --------------------------------------------------- |
+| UID propagation to tools  | ❌ Impossible (ToolServer severs task-local) | ✅ `ctx: &RequestContext` in every `call()`         |
+| Concurrent user isolation | ❌ RwLock race condition                     | ✅ Each request has its own `RequestContext`        |
+| Chat history management   | ❌ Not built-in (must reinvent)              | ✅ First-class `chat_history: &[Message]` parameter |
+| Code complexity           | ~5000 LOC across 15+ files                   | ~200 LOC across 2 new files                         |
+| Debugging                 | Opaque ToolServer + tracing spans            | Direct `log::info!` in a flat loop                  |
 
 ## Estimated Effort
 
@@ -255,11 +257,10 @@ peon-core/src/
 ## Open Design Questions
 
 > [!IMPORTANT]
+>
 > 1. **Do we need `async-trait` or can we use RPITIT (return position impl trait)?**
 >    Since the project uses `edition = "2024"`, native `async fn` in traits is stable. We can skip `async-trait` entirely and just use `fn call(...) -> impl Future<...> + Send`. This is cleaner but requires all implementors to be `Send + Sync`.
->
 > 2. **Sequential vs concurrent tool execution?**
 >    For MVP, sequential tool execution is safest (one tool at a time). rig does concurrent via `buffer_unordered`. We can add this later without breaking changes.
->
 > 3. **Should `PeonTool::definition()` also receive `&RequestContext`?**
 >    Currently rig passes the prompt string to `definition()` so the tool can dynamically adjust its schema (e.g., update whitelisted paths). We should pass `ctx` here too for consistency, but it's optional for MVP.
