@@ -3,9 +3,11 @@ name = "peon-telegram"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "A native multi-user Telegram bot interface for the zero-trust Peon Agent framework, featuring persistent sessions."
+repository = "https://github.com/stephen94125/peon-lib"
 
 [dependencies]
-peon-core = { path = "../peon-core" }
+peon-core = { version = "0.1.0" }
 anyhow = "1.0.98"
 log = "0.4"
 env_logger = "0.11"
