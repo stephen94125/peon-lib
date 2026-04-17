@@ -21,16 +21,25 @@ impl FileEnforcer {
             enforcer: RwLock::new(e),
         });
 
-        // Try to load file_permissions.txt from environment variable or fallback to current directory
-        if let Ok(cwd) = env::current_dir() {
-            let perm_file = std::env::var("PEON_FILE_PERMISSIONS").unwrap_or_else(|_| "file_permissions.txt".to_string());
-            let perm_path = cwd.join(perm_file);
-            if perm_path.exists() {
-                if let Ok(content) = tokio::fs::read_to_string(perm_path).await {
-                    file_enforcer.load_permissions_from_string(&content).await;
-                }
+        // Load file_permissions.txt from environment variable or fallback to current directory
+        let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let perm_file = std::env::var("PEON_FILE_PERMISSIONS").unwrap_or_else(|_| "file_permissions.txt".to_string());
+        let perm_path = cwd.join(&perm_file);
+
+        let content = match tokio::fs::read_to_string(&perm_path).await {
+            Ok(c) => c,
+            Err(_) => {
+                panic!(
+                    "\n[Peon Security Error] Could not find or read file permissions file at {:?}.\n\
+                    Zero-trust mode requires explicit definitions.\n\
+                    To bypass this for local testing (WARNING: this opens execution to ALL skills), run:\n\
+                    \n    echo \"x, ./skills/*\" > {}\n\
+                    \nOtherwise, please create this file and explicitly define safe target paths.\n",
+                    perm_path, perm_file
+                );
             }
-        }
+        };
+        file_enforcer.load_permissions_from_string(&content).await;
 
         file_enforcer
     }
@@ -140,23 +149,28 @@ impl FileEnforcer {
         match e.enforce(vec![subject, resource, action]) {
             Ok(true) => true,
             Ok(false) => {
-                // If Casbin explicitly denies or lacks rules.
-                // Let's implement default allow for MVP UNLESS there are deny rules,
-                // BUT casbin defaults to deny if no policies exist.
-                // For now, since user tests expect allow by default (from previous `return true;`),
-                // we'll see if `e.has_policy()` is false to fallback to true.
-                let policies = e.get_policy();
-                if policies.is_empty() {
-                    true
-                } else {
-                    false
-                }
+                // By default, Casbin denies if no explicit rules match or policies are empty.
+                // Strict zero-trust MVP: no fallbacks to true here.
+                false
             },
             Err(err) => {
                 warn!("Casbin enforcer error: {}", err);
                 false
             }
         }
+    }
+
+    /// Creates a blank FileEnforcer without loading any external permission files.
+    /// This is strictly for unit testing the Casbin rules engine cleanly.
+    #[cfg(test)]
+    pub async fn new_empty() -> Arc<Self> {
+        let model_conf = include_str!("file_enforcer_model.conf");
+        let m = DefaultModel::from_str(model_conf).await.unwrap();
+        let a = MemoryAdapter::default();
+        let e = Enforcer::new(m, a).await.unwrap();
+        Arc::new(Self {
+            enforcer: RwLock::new(e),
+        })
     }
 }
 /// The Personnel Security Enforcer for Peon.
@@ -176,12 +190,21 @@ impl UserEnforcer {
         // Load default policies from CSV
         let perm_file = std::env::var("PEON_USER_PERMISSIONS").unwrap_or_else(|_| "user_permissions.csv".to_string());
         let cwd = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let perm_path = cwd.join(perm_file);
+        let perm_path = cwd.join(&perm_file);
         
-        let csv_content = tokio::fs::read_to_string(&perm_path).await.unwrap_or_else(|_| {
-            warn!("Could not read personnel permissions from {:?}, defaulting to explicit ALLOW ALL", perm_path);
-            "p, *, *, *, allow\n".to_string()
-        });
+        let csv_content = match tokio::fs::read_to_string(&perm_path).await {
+            Ok(content) => content,
+            Err(_) => {
+                panic!(
+                    "\n[Peon Security Error] Could not find or read personnel permissions file at {:?}.\n\
+                    Zero-trust mode requires explicit definitions.\n\
+                    To bypass this for local testing (WARNING: this opens ALL access), run:\n\
+                    \n    echo \"p, *, *, *, allow\" > {}\n\
+                    \nOtherwise, please create this file and explicitly map your users/roles.\n",
+                    perm_path, perm_file
+                );
+            }
+        };
         for line in csv_content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -295,7 +318,7 @@ mod tests {
             r, /home/test1.txt
             # Another comment
         ";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         assert!(enforcer.enforce("agent", "read", "/home/test1.txt").await);
@@ -310,7 +333,7 @@ mod tests {
             z, /unknown/action
             r, /home/test.txt
         ";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Malformed should be skipped gracefully
@@ -320,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_whitespace_tolerance() {
         let rules = "   rx   ,   /home/whitespace.txt   ";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         assert!(enforcer.enforce("agent", "read", "/home/whitespace.txt").await);
@@ -331,7 +354,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_multiplexed_actions() {
         let rules = "rwx, /home/multiplex.txt";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         assert!(enforcer.enforce("agent", "read", "/home/multiplex.txt").await);
@@ -342,7 +365,7 @@ mod tests {
     #[tokio::test]
     async fn test_action_granularity() {
         let rules = "r, /home/granularity.txt";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Ensure ONLY read is granted
@@ -355,7 +378,7 @@ mod tests {
     #[tokio::test]
     async fn test_relative_path_canonicalization() {
         let rules = "r, ./src/main.rs";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Resolve absolute manually to check
@@ -367,7 +390,7 @@ mod tests {
     async fn test_directory_wildcard_expansion() {
         // Enforcer parser automatically converts `/home/dir/` to `/home/dir/*`
         let rules = "r, /home/user/dir/";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Sub file should be allowed
@@ -385,7 +408,7 @@ mod tests {
             r, /home/user/dir/
             !r, /home/user/dir/secret.txt
         ";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Normal file allowed by wildcard
@@ -400,7 +423,7 @@ mod tests {
             !x, /home/user/script.sh
             rx, /home/user/
         ";
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         enforcer.load_permissions_from_string(rules).await;
 
         // Read should be allowed by dir wildcard
@@ -412,10 +435,10 @@ mod tests {
     /// 5. 系統預設行為 (Default Behaviors)
     #[tokio::test]
     async fn test_empty_enforcer_default_allow() {
-        let enforcer = FileEnforcer::new().await;
+        let enforcer = FileEnforcer::new_empty().await;
         
         // Currently matching MVP backwards compatibility: empty Casbin = default allow.
         // Wait, NO policies are loaded.
-        assert!(enforcer.enforce("agent", "read", "/random/path.txt").await);
+        assert!(!enforcer.enforce("agent", "read", "/random/path.txt").await);
     }
 }
