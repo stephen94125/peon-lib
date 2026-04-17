@@ -1,5 +1,6 @@
 use anyhow::Result;
 use teloxide::prelude::*;
+use peon_core::tools::CURRENT_UID;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,7 +29,11 @@ async fn main() -> Result<()> {
             match peon_core::agent::PeonAgentBuilder::new().await {
                 Ok(builder) => {
                     let agent = builder.default_prompt().build();
-                    match agent.prompt(text).await {
+                    let response_result = CURRENT_UID.scope(msg.chat.id.to_string(), async {
+                        agent.prompt(text).await
+                    }).await;
+
+                    match response_result {
                         Ok(response) => {
                             bot.send_message(msg.chat.id, response).await?;
                         }
