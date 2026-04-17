@@ -117,14 +117,14 @@ cp .env.example .env
 
 ```dotenv
 # 模型与供应商
-DEFAULT_PROVIDER=openai
+PROVIDER=openai
 DEFAULT_MODEL=gpt-4o
 # OPENAI_API_KEY=sk-...
 
 # 核心安全策略引擎存放路径（必须为相对路径）
 PEON_SKILLS_DIR=skills
-PEON_FILE_PERMISSIONS=file_permissions.txt
-PEON_USER_PERMISSIONS=user_permissions.csv
+PEON_FILE_PERMISSIONS_PATH=file_permissions.txt
+PEON_USER_PERMISSIONS_PATH=user_permissions.csv
 ```
 
 ## 开发模块一览
@@ -215,8 +215,9 @@ description: Executes Nmap on a target subnet.
 > **强硬零信任机制**: Peon 预设会在当前执行目录 (`./`) 下寻找 `file_permissions.txt` 与 `user_permissions.csv`。若找不到这些文件，Agent 将会**直接 Panic 拒绝启动**，以确保系统不会在无权限控制的情况下裸奔。
 >
 > 您可以通过以下环境变数来手动指定这些文件的路径：
-> - `PEON_FILE_PERMISSIONS`: 物理路径权限表位置。
-> - `PEON_USER_PERMISSIONS`: 身分角色权限表位置。
+>
+> - `PEON_FILE_PERMISSIONS_PATH`: 物理路径权限表位置。
+> - `PEON_USER_PERMISSIONS_PATH`: 身分角色权限表位置。
 
 **1. `file_permissions.txt`** (黑白名单防护机制)
 
@@ -241,7 +242,7 @@ Peon 的底层核心将会默默地将每一次的方法与系统接触拦截至
 
 ## 深度支援的 AI 模型厂商
 
-所有的多模型分发介面都已经由 Peon 替各位妥善处理，使用者在绝大多数时间内都只需要更改 `DEFAULT_PROVIDER` 取代模型。包含下列各大最夯的厂商：
+所有的多模型分发介面都已经由 Peon 替各位妥善处理，使用者在绝大多数时间内都只需要更改 `PROVIDER` 取代模型。包含下列各大最夯的厂商：
 
 Anthropic · Azure · Cohere · Deepseek · Gemini · Groq · Huggingface · Hyperbolic · Llamafile · Mira · Mistral · Moonshot · Ollama · OpenAI · OpenRouter · Perplexity · Together · xAI
 

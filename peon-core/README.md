@@ -38,10 +38,10 @@ use peon_core::agent::PeonAgentBuilder;
 let agent = PeonAgentBuilder::new().await?
     // 1. Append instructions to the default prompt:
     .append_system_prompt("Always format your output as a markdown table.")
-    
+
     // OR 2. Completely overhaul the prompt (must include {skills}):
     // .custom_system_prompt("You are a helpful IT bot.\n\n{skills}\n\n{custom_prompt}", None)
-    
+
     .build();
 ```
 
@@ -49,7 +49,7 @@ let agent = PeonAgentBuilder::new().await?
 
 We've prepared an out-of-the-box example in the `examples/` directory.
 
-1. Ensure your `.env` is configured with your chosen provider (e.g., `DEFAULT_PROVIDER=openai` and `OPENAI_API_KEY=...`).
+1. Ensure your `.env` is configured with your chosen provider (e.g., `PROVIDER=openai` and `OPENAI_API_KEY=...`).
 2. Run the example from your workspace root:
 
 ```bash
@@ -69,11 +69,12 @@ Security in Peon Core isn't hardcoded; it relies on the industry-standard [Casbi
 For a detailed understanding of how to write complex policies, we highly recommend reading the [Casbin Official Syntax Documentation](https://casbin.org/docs/how-it-works).
 
 > [!WARNING]
-> **Strict Enforcement**: Peon looks for permission files in your current working directory (`./`) by default. If they are missing, the engine will **Panic on startup**. 
+> **Strict Enforcement**: Peon looks for permission files in your current working directory (`./`) by default. If they are missing, the engine will **Panic on startup**.
 >
 > You can override these locations via environment variables:
-> - `PEON_FILE_PERMISSIONS`: Custom path for file ACLs.
-> - `PEON_USER_PERMISSIONS`: Custom path for user/role ACLs.
+>
+> - `PEON_FILE_PERMISSIONS_PATH`: Custom path for file ACLs.
+> - `PEON_USER_PERMISSIONS_PATH`: Custom path for user/role ACLs.
 
 There are two primary permission axes you must configure for your Agent:
 

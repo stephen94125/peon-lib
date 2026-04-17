@@ -118,14 +118,14 @@ A base configuration looks like this:
 
 ```dotenv
 # Provider and Model
-DEFAULT_PROVIDER=openai
+PROVIDER=openai
 DEFAULT_MODEL=gpt-4o
 # OPENAI_API_KEY=sk-...
 
 # Policy Contexts (Requires relative paths)
 PEON_SKILLS_DIR=skills
-PEON_FILE_PERMISSIONS=file_permissions.txt
-PEON_USER_PERMISSIONS=user_permissions.csv
+PEON_FILE_PERMISSIONS_PATH=file_permissions.txt
+PEON_USER_PERMISSIONS_PATH=user_permissions.csv
 ```
 
 ## Workspace Crates
@@ -218,8 +218,9 @@ No skill execution is allowed unless the user and file paths are cross-reference
 > **Strict Zero-Trust**: Peon requires both `file_permissions.txt` and `user_permissions.csv` to exist in your current working directory (`./`) by default. If these files are missing, the agent will **fail to start (Panic)** to prevent insecure execution.
 >
 > You can override these paths using environment variables:
-> - `PEON_FILE_PERMISSIONS`: Custom path for file ACLs.
-> - `PEON_USER_PERMISSIONS`: Custom path for user/role ACLs.
+>
+> - `PEON_FILE_PERMISSIONS_PATH`: Custom path for file ACLs.
+> - `PEON_USER_PERMISSIONS_PATH`: Custom path for user/role ACLs.
 
 **1. `file_permissions.txt`** (Denylist / Root ACL)
 
@@ -244,7 +245,7 @@ Peon automatically intercepts every LLM function call to validate against these 
 
 ## Supported AI Providers
 
-Peon supports a unified interface over almost any modern AI provider without changing your code, directly through `DEFAULT_PROVIDER`:
+Peon supports a unified interface over almost any modern AI provider without changing your code, directly through `PROVIDER`:
 
 Anthropic · Azure · Cohere · Deepseek · Gemini · Groq · Huggingface · Hyperbolic · Llamafile · Mira · Mistral · Moonshot · Ollama · OpenAI · OpenRouter · Perplexity · Together · xAI
 
