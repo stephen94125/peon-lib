@@ -29,8 +29,9 @@ peon-telegram --init
 2. 打开刚刚自动生成的 `.env` 档案，填上你的 Token：
 
    ```dotenv
-   DEFAULT_PROVIDER="openai" # 或者 gemini, anthropic...
-   OPENAI_API_KEY="sk-..."
+   PROVIDER="openai" # 或者 gemini, anthropic...
+   API_KEY="sk-..."
+   MODEL="gpt-4o"
 
    # 把你在 Telegram 申请到的 Token 贴在这里：
    TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"

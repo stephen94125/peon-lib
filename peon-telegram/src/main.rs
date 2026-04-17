@@ -1,10 +1,10 @@
 use anyhow::Result;
 use teloxide::prelude::*;
-use peon_core::tools::CURRENT_UID;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 1. Initialize logging
+    // 1. Load .env and initialize logging
+    dotenvy::dotenv().ok();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
@@ -25,11 +25,12 @@ async fn main() -> Result<()> {
     // 3. Initialize Telegram Bot from TELOXIDE_TOKEN environment variable
     let bot = Bot::from_env();
 
-    // 3. Start single-threaded REPL processing incoming messages
+    // 4. Start single-threaded REPL processing incoming messages
     teloxide::repl(bot, |bot: Bot, msg: Message| async move {
         // We only process pure text messages for this MVP phase
         if let Some(text) = msg.text() {
-            log::info!("Received message from chat ID {}: {}", msg.chat.id, text);
+            let chat_id = msg.chat.id.to_string();
+            log::info!("Received message from chat ID {}: {}", chat_id, text);
             
             // Provide visual feedback that the bot is thinking
             let _ = bot.send_chat_action(msg.chat.id, teloxide::types::ChatAction::Typing).await;
@@ -40,11 +41,9 @@ async fn main() -> Result<()> {
             match peon_core::agent::PeonAgentBuilder::new().await {
                 Ok(builder) => {
                     let agent = builder.default_prompt().build();
-                    let response_result = CURRENT_UID.scope(msg.chat.id.to_string(), async {
-                        agent.prompt(text).await
-                    }).await;
 
-                    match response_result {
+                    // The UID is now explicitly passed — no more CURRENT_UID.scope() magic!
+                    match agent.prompt(text, &chat_id).await {
                         Ok(response) => {
                             bot.send_message(msg.chat.id, response).await?;
                         }
