@@ -1,6 +1,6 @@
 # Peon Telegram 
 
-[🇨🇳 简体中文](README.zh-CN.md) | [🇬🇧 English](README.md)
+[🇨🇳 简体中文](README.zh.md) | [🇬🇧 English](README.md)
 
 `peon-telegram` is a sub-crate that exposes the powerful Peon zero-trust engine directly to Telegram.
 

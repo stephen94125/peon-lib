@@ -1,6 +1,6 @@
 # Peon Core
 
-[🇨🇳 简体中文](README.zh-CN.md) | [🇬🇧 English](README.md)
+[🇨🇳 简体中文](README.zh.md) | [🇬🇧 English](README.md)
 
 **Peon Core** is the zero-trust engine driving the Peon workspace. It ensures that any AI agent instantiated through our framework is physically powerless to access or execute scripts without explicit authorization.
 

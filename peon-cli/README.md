@@ -1,6 +1,6 @@
 # Peon CLI
 
-[🇨🇳 简体中文](README.zh-CN.md) | [🇬🇧 English](README.md)
+[🇨🇳 简体中文](README.zh.md) | [🇬🇧 English](README.md)
 
 `peon-cli` is the interactive command-line interface for the zero-trust Peon Agent layer.
 
