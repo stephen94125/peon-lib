@@ -3,6 +3,8 @@ name = "peon-core"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "The zero-trust engine driving the Peon workspace, providing dual-layer sandboxing and dynamic Casbin whitelisting."
+repository = "https://github.com/stephen94125/peon-lib"
 
 [lib]
 name = "peon_core"
