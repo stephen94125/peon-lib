@@ -1643,7 +1643,7 @@ dependencies = [
  "clap",
  "env_logger",
  "log",
- "peon-core",
+ "peon-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
 ]
 
@@ -1667,11 +1667,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "peon-core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ed4e19193d5e81285f12695ecfbf5b12b49e5ed1b9e0189ca715dd4ebd959a1"
+dependencies = [
+ "anyhow",
+ "casbin",
+ "log",
+ "regex",
+ "rig-core",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "peon-lib"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "peon-core",
+ "peon-core 0.1.0",
 ]
 
 [[package]]
@@ -1684,7 +1702,7 @@ dependencies = [
  "env_logger",
  "line-bot-sdk-rust",
  "log",
- "peon-core",
+ "peon-core 0.1.0",
  "rig-core",
  "serde",
  "serde_json",
@@ -1699,7 +1717,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "peon-core",
+ "peon-core 0.1.0",
  "teloxide",
  "tokio",
 ]

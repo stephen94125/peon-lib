@@ -3,9 +3,11 @@ name = "peon-cli"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "The interactive Unix-style command-line interface for the zero-trust Peon Agent layer."
+repository = "https://github.com/stephen94125/peon-lib"
 
 [dependencies]
-peon-core = { path = "../peon-core" }
+peon-core = { version = "0.1.0" }
 anyhow = "1.0.98"
 log = "0.4"
 env_logger = "0.11"
