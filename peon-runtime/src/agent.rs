@@ -79,6 +79,12 @@ impl<P: CompletionProvider> AgentLoopBuilder<P> {
         self
     }
 
+    /// Register a pre-boxed tool.
+    pub fn tool_boxed(mut self, tool: Box<dyn PeonTool>) -> Self {
+        self.tools.push(tool);
+        self
+    }
+
     /// Set the maximum number of LLM round-trips (default: 10).
     ///
     /// Each round-trip consists of: send prompt → get response → (optionally execute tools).
@@ -163,7 +169,11 @@ impl<P: CompletionProvider> AgentLoop<P> {
         ctx: &RequestContext,
     ) -> Result<AgentResponse, AgentError> {
         let prompt_msg = prompt.into();
-        info!("Agent run: uid='{}', prompt={:?}", ctx.uid(), prompt_msg.text().unwrap_or_default());
+        info!(
+            "Agent run: uid='{}', prompt={:?}",
+            ctx.uid(),
+            prompt_msg.text().unwrap_or_default()
+        );
 
         // Build the working message list: history + new prompt
         let mut messages: Vec<Message> = chat_history.to_vec();
@@ -199,8 +209,10 @@ impl<P: CompletionProvider> AgentLoop<P> {
             }
 
             // 4. Partition response into tool calls and text parts
-            let (tool_calls, texts): (Vec<_>, Vec<_>) =
-                response.content.iter().partition(|c| matches!(c, AssistantContent::ToolCall { .. }));
+            let (tool_calls, texts): (Vec<_>, Vec<_>) = response
+                .content
+                .iter()
+                .partition(|c| matches!(c, AssistantContent::ToolCall { .. }));
 
             // 5. Append assistant message to history
             messages.push(Message::assistant(response.content.clone()));
@@ -295,8 +307,8 @@ mod tests {
     use crate::message::AssistantContent;
     use crate::provider::CompletionResponse;
     use crate::tool::{BoxFuture, ToolDefinition};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     // === Mock Provider ===
 
@@ -469,9 +481,7 @@ mod tests {
                     usage: None,
                 },
                 CompletionResponse {
-                    content: vec![AssistantContent::Text {
-                        text: "ok".into(),
-                    }],
+                    content: vec![AssistantContent::Text { text: "ok".into() }],
                     usage: None,
                 },
             ]);
