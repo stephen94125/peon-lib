@@ -19,6 +19,10 @@
    # 把你在 Telegram 申请到的 Token 贴在这里：
    export TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
    ```
+
+> [!TIP]
+> 系統預設會從 **`./skills`** 目錄（而非 `./.skills`）讀取技能資訊。請確保您的技能資料夾路徑正確，或透過環境變數指定。
+
 3. 运行！
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram

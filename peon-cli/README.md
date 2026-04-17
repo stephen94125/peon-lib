@@ -24,6 +24,9 @@ sudo cp target/release/peon-cli /usr/local/bin/peon
 Peon uses `.env` configuration (matching `peon-core`) by default.
 Ensure you export API keys to your environment, or create a `.env` in the directory you execute from.
 
+> [!IMPORTANT]
+> By default, Peon scans for skills in the **`./skills`** directory (not `./.skills`). This can be customized via the `PEON_SKILLS_DIR` environment variable.
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 export DEFAULT_PROVIDER="openai"

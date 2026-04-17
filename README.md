@@ -189,7 +189,7 @@ This runs an HTTP server on `0.0.0.0:3000/callback` out-of-the-box. Ensure you u
 
 Peon _Skills_ are slightly different than typical generic tool definitions. 
 
-We use structured `Markdown/XML` logic inside a `.skills/SKILL.md` file to explicitly define both the *metadata* of a script and the *LLM instructions*.
+We use structured `Markdown/XML` logic inside a `skills/SKILL.md` file (Note: the default directory is **`./skills`**, not `./.skills`) to explicitly define both the *metadata* of a script and the *LLM instructions*.
 
 Here's an example of the philosophy:
 ```markdown
@@ -210,7 +210,8 @@ No skill execution is allowed unless the user and file paths are cross-reference
 **1. `file_permissions.txt`** (Denylist / Root ACL)
 ```text
 # Give the agent access to execute scripts inside our skills folder
-x, ./.skills/*
+# (System default reads from ./skills/*)
+x, ./skills/*
 # Deny it from ever executing rm
 !x, /bin/rm
 ```

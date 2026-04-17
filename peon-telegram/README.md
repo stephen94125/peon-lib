@@ -19,6 +19,10 @@ To turn your isolated local agent into a live Telegram bot, follow these steps:
    # Add your Telegram Token here:
    export TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
    ```
+
+> [!TIP]
+> Peon searches for skills in the **`./skills`** directory by default (not `./.skills`). Ensure your skills are placed there or set `PEON_SKILLS_DIR`.
+
 3. Run the bot!
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram

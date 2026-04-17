@@ -69,7 +69,8 @@ The enforcer utilizes a **Deny-Override** logic. The fields are defined as `acti
 * `!r` / `!x`: Explicitly **Deny** access (Highest priority)
 
 ```text
-# Allow the agent to execute any script within the .skills directory explicitly
+# Allow the agent to execute any script within the skills directory
+# (Note: the default directory is ./skills, not ./.skills)
 x, ./skills/*
 
 # Block reading of a specific file universally, no matter what happens

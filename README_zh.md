@@ -187,7 +187,7 @@ cargo run -p peon-line
 
 Peon 的 _技能 (Skills)_ 系统截然不同于一般项目简单敷衍的 function call 打包。
 
-我们采用在 `.skills/SKILL.md` 内部撰写类 `Markdown/XML` 的方式，用纯粹的简体中文或英文来叙做工具描述（Prompt 指令），大幅增加 LLM 的理解能力。
+我们采用在 `skills/SKILL.md` 内部撰写类 `Markdown/XML` 的方式（请注意：系統預設讀取的是 **`./skills`** 而非 `./.skills`），用纯粹的简体中文或英文来叙做工具描述（Prompt 指令），大幅增加 LLM 的理解能力。
 
 架构举例如下：
 ```markdown
@@ -207,8 +207,9 @@ description: Executes Nmap on a target subnet.
 
 **1. `file_permissions.txt`** (黑白名单防护机制)
 ```text
-# 允许模型执行任何包裹在 .skills 里面的可执行文件
-x, ./.skills/*
+# 允许模型执行任何包裹在 skills 里面的可执行文件
+# (系統預設會從 ./skills/* 讀取權限)
+x, ./skills/*
 # 以最高顺位强硬阻止触碰一切有关 rm 的危险行为
 !x, /bin/rm
 ```

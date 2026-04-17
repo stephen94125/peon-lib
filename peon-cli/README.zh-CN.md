@@ -24,6 +24,9 @@ sudo cp target/release/peon-cli /usr/local/bin/peon
 Peon 默认采用与 `peon-core` 一致的 `.env` 环境变量配置系统。
 请确保您将所使用模型的 API 密钥导入到环境变量中，或直接在执行命令的目录下创建一个 `.env` 文件。
 
+> [!IMPORTANT]
+> 系統預設會讀取 **`./skills`** 目錄（而非 `./.skills`）來載入技能。您可以透過 `PEON_SKILLS_DIR` 環境變數來更改此路徑。
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 export DEFAULT_PROVIDER="openai"

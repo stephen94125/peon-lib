@@ -69,7 +69,8 @@ cp file_permissions_example.txt file_permissions.txt
 * `!r` / `!x`: **显式拒绝 (Deny)** 访问（拥有最高优先级！）
 
 ```text
-# 显式允许 Agent 执行 .skills 目录底下的所有脚本
+# 显式允许 Agent 执行 skills 目录底下的所有脚本
+# (请注意：系統預設讀取的是 ./skills 而非 ./.skills)
 x, ./skills/*
 
 # 无论如何，死锁核心机密文件，Agent 绝对无法读取
