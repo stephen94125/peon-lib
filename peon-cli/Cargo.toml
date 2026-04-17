@@ -7,32 +7,10 @@ description = "The interactive Unix-style command-line interface for the zero-tr
 repository = "https://github.com/stephen94125/peon-lib"
 
 [dependencies]
-peon-core = { version = "0.1.4" }
+peon-core = { version = "0.2.0" }
 anyhow = "1.0.98"
 log = "0.4"
 env_logger = "0.11"
+dotenvy = "0.15"
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4", features = ["derive"] }
-
-[features]
-default = ["peon-core/default"]
-anthropic = ["peon-core/anthropic"]
-azure = ["peon-core/azure"]
-cohere = ["peon-core/cohere"]
-deepseek = ["peon-core/deepseek"]
-galadriel = ["peon-core/galadriel"]
-gemini = ["peon-core/gemini"]
-groq = ["peon-core/groq"]
-huggingface = ["peon-core/huggingface"]
-hyperbolic = ["peon-core/hyperbolic"]
-llamafile = ["peon-core/llamafile"]
-mira = ["peon-core/mira"]
-mistral = ["peon-core/mistral"]
-moonshot = ["peon-core/moonshot"]
-ollama = ["peon-core/ollama"]
-openai = ["peon-core/openai"]
-openrouter = ["peon-core/openrouter"]
-perplexity = ["peon-core/perplexity"]
-together = ["peon-core/together"]
-xai = ["peon-core/xai"]
-all = ["peon-core/all"]

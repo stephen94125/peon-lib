@@ -28,12 +28,12 @@ Peon 默认采用与 `peon-core` 一致的 `.env` 环境变量配置系统。
 > 系統預設會讀取 **`./skills`** 目錄（而非 `./.skills`）來載入技能。您可以透過 `PEON_SKILLS_DIR` 環境變數來更改此路徑。
 
 > [!WARNING]
-> CLI 启动时预设读取执行目录下的 `file_permissions.txt` 与 `user_permissions.csv`。若需自定义，请设定 `PEON_FILE_PERMISSIONS` 与 `PEON_USER_PERMISSIONS` 环境变量。
+> CLI 启动时预设读取执行目录下的 `file_permissions.txt` 与 `user_permissions.csv`。若需自定义，请设定 `PEON_FILE_PERMISSIONS_PATH` 与 `PEON_USER_PERMISSIONS_PATH` 环境变量。
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export DEFAULT_PROVIDER="openai"
-export DEFAULT_MODEL="gpt-4o"
+export API_KEY="sk-..."
+export PROVIDER="openai"
+export MODEL="gpt-4o"
 ```
 
 ## 💻 基础用法

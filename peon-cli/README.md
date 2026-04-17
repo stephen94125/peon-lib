@@ -28,17 +28,17 @@ Ensure you export API keys to your environment, or create a `.env` in the direct
 > By default, Peon scans for skills in the **`./skills`** directory (not `./.skills`). This can be customized via the `PEON_SKILLS_DIR` environment variable.
 
 > [!WARNING]
-> The CLI requires `file_permissions.txt` and `user_permissions.csv` to be present in its execution directory. You can override these using `PEON_FILE_PERMISSIONS` and `PEON_USER_PERMISSIONS`.
+> The CLI requires `file_permissions.txt` and `user_permissions.csv` to be present in its execution directory. You can override these using `PEON_FILE_PERMISSIONS_PATH` and `PEON_USER_PERMISSIONS_PATH`.
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export DEFAULT_PROVIDER="openai"
-export DEFAULT_MODEL="gpt-4o"
+export API_KEY="sk-..."
+export PROVIDER="openai"
+export MODEL="gpt-4o"
 ```
 
 ## 💻 Usage
 
-`peon-cli` was designed with Unix composability in mind. Internal initialization loading logs are written safely to `stderr`, and the final AI response is printed directly to `stdout`. 
+`peon-cli` was designed with Unix composability in mind. Internal initialization loading logs are written safely to `stderr`, and the final AI response is printed directly to `stdout`.
 
 This guarantees pipeline tools like `grep`, `jq`, or redirects like `> file.txt` will **not** be corrupted by Agent startup logs.
 
