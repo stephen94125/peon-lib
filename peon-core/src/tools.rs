@@ -110,8 +110,13 @@ impl Tool for ReadSkillTool {
         let skill_base_dir = Path::new(&skill.location)
             .parent()
             .unwrap_or(Path::new("."));
+
+        let current_uid = CURRENT_UID
+            .try_with(|id| id.clone())
+            .unwrap_or_else(|_| "agent".to_string());
+
         self.engine
-            .process_skill_content("agent", skill_base_dir, &content)
+            .process_skill_content(&current_uid, skill_base_dir, &content)
             .await;
 
         Ok(content)
