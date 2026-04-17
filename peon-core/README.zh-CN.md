@@ -28,6 +28,23 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+### 客制化 Agent 的大脑 (System Prompt)
+
+您可以极度轻易地在这个预配好的严密安控管线之上，外挂您专属的行为准则；或是彻底重写它的身份定义。
+
+```rust
+use peon_core::agent::PeonAgentBuilder;
+
+let agent = PeonAgentBuilder::new().await?
+    // 1. 简易外挂：在预设指令的最尾端加上您的要求
+    .append_system_prompt("请务必使用繁体中文回答，并且加上 emoji。")
+    
+    // 或者 2. 彻底复写 (核心占位符 {skills} 绝对不可省略)：
+    // .custom_system_prompt("你是一个 IT 协助机器人。\n\n{skills}\n\n{custom_prompt}", None)
+    
+    .build();
+```
+
 ### 立即跑跑看！
 
 我们在 `examples/` 目录中已经为您准备好了开箱即用的范例程序。

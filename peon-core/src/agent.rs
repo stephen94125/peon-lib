@@ -91,7 +91,37 @@ impl PeonAgentBuilder<rig::agent::NoToolConfig> {
 impl PeonAgentBuilder<rig::agent::WithBuilderTools> {
     /// Apply the standard Peon system instructions, injecting the discovered skills XML catalog.
     pub fn default_prompt(self) -> Self {
-        let system_prompt = SYSTEM_PROMPT_TEMPLATE.replace("{}", &self.skills_xml);
+        let system_prompt = SYSTEM_PROMPT_TEMPLATE
+            .replace("{skills}", &self.skills_xml)
+            .replace("{custom_prompt}", "");
+        Self {
+            builder: self.builder.preamble(&system_prompt),
+            engine: self.engine,
+            skills_xml: self.skills_xml,
+        }
+    }
+
+    /// Apply the standard Peon system instructions, but append your own custom instructions 
+    /// to the very end of the prompt.
+    pub fn append_system_prompt(self, custom_prompt: &str) -> Self {
+        let system_prompt = SYSTEM_PROMPT_TEMPLATE
+            .replace("{skills}", &self.skills_xml)
+            .replace("{custom_prompt}", custom_prompt);
+        Self {
+            builder: self.builder.preamble(&system_prompt),
+            engine: self.engine,
+            skills_xml: self.skills_xml,
+        }
+    }
+
+    /// Completely replace the base system prompt template with your own string.
+    /// Your template string **MUST** contain the `{skills}` placeholder to allow Peon 
+    /// to inject the dynamically discovered capabilities XML. 
+    /// You should also include `{custom_prompt}` if you intend to append custom data later.
+    pub fn custom_system_prompt(self, template: &str, custom_prompt: Option<&str>) -> Self {
+        let system_prompt = template
+            .replace("{skills}", &self.skills_xml)
+            .replace("{custom_prompt}", custom_prompt.unwrap_or(""));
         Self {
             builder: self.builder.preamble(&system_prompt),
             engine: self.engine,
@@ -177,7 +207,8 @@ impl PeonAgent {
 }
 
 /// The default system prompt template.
-/// `{}` is replaced with the `<available_skills>` XML catalog.
+/// `{skills}` is replaced with the `<available_skills>` XML catalog.
+/// `{custom_prompt}` is replaced by any appended prompt string.
 const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Peon, a powerful and versatile local agent executor.
 
 **Your Execution Process:**
@@ -192,4 +223,6 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Peon, a powerful and versatile l
 - Do NOT attempt alternative paths or workarounds if permission is denied.
 - Never fabricate results. If you cannot execute a required step, say so honestly.
 
-{}"#;
+{skills}
+
+{custom_prompt}"#;

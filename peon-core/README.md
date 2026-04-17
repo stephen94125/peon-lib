@@ -28,6 +28,23 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+### Customizing the Agent's Brain
+
+You can easily append custom instructions to the agent's baseline security rules, or completely replace the system prompt.
+
+```rust
+use peon_core::agent::PeonAgentBuilder;
+
+let agent = PeonAgentBuilder::new().await?
+    // 1. Append instructions to the default prompt:
+    .append_system_prompt("Always format your output as a markdown table.")
+    
+    // OR 2. Completely overhaul the prompt (must include {skills}):
+    // .custom_system_prompt("You are a helpful IT bot.\n\n{skills}\n\n{custom_prompt}", None)
+    
+    .build();
+```
+
 ### Try it yourself!
 
 We've prepared an out-of-the-box example in the `examples/` directory.
