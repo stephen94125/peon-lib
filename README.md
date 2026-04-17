@@ -122,7 +122,7 @@ DEFAULT_MODEL=gpt-4o
 # OPENAI_API_KEY=sk-...
 
 # Policy Contexts (Requires relative paths)
-PEON_SKILLS_DIR=.skills
+PEON_SKILLS_DIR=skills
 PEON_FILE_PERMISSIONS=file_permissions.txt
 PEON_USER_PERMISSIONS=user_permissions.csv
 ```

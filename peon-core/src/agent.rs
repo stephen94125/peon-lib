@@ -33,7 +33,7 @@ impl PeonAgentBuilder<rig::agent::NoToolConfig> {
         info!("🚀 Peon agent initializing foundations...");
 
         // Phase 1: Boot & Discovery
-        let skills_dir = std::env::var("PEON_SKILLS_DIR").unwrap_or_else(|_| ".skills".to_string());
+        let skills_dir = std::env::var("PEON_SKILLS_DIR").unwrap_or_else(|_| "skills".to_string());
         let skills = scan_skills(&skills_dir, None).await?;
         let skills = Arc::new(skills);
 

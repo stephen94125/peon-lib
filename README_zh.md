@@ -121,7 +121,7 @@ DEFAULT_MODEL=gpt-4o
 # OPENAI_API_KEY=sk-...
 
 # 核心安全策略引擎存放路径（必须为相对路径）
-PEON_SKILLS_DIR=.skills
+PEON_SKILLS_DIR=skills
 PEON_FILE_PERMISSIONS=file_permissions.txt
 PEON_USER_PERMISSIONS=user_permissions.csv
 ```
