@@ -18,43 +18,5 @@ anyhow = "1.0.98"
 
 [features]
 default = ["peon-core/default"]
-anthropic = ["peon-core/anthropic"]
-azure = ["peon-core/azure"]
-cohere = ["peon-core/cohere"]
-deepseek = ["peon-core/deepseek"]
-galadriel = ["peon-core/galadriel"]
-gemini = ["peon-core/gemini"]
-groq = ["peon-core/groq"]
-huggingface = ["peon-core/huggingface"]
-hyperbolic = ["peon-core/hyperbolic"]
-llamafile = ["peon-core/llamafile"]
-mira = ["peon-core/mira"]
-mistral = ["peon-core/mistral"]
-moonshot = ["peon-core/moonshot"]
-ollama = ["peon-core/ollama"]
-openai = ["peon-core/openai"]
-openrouter = ["peon-core/openrouter"]
-perplexity = ["peon-core/perplexity"]
-together = ["peon-core/together"]
-xai = ["peon-core/xai"]
-all = [
-    "anthropic",
-    "azure",
-    "cohere",
-    "deepseek",
-    "galadriel",
-    "gemini",
-    "groq",
-    "huggingface",
-    "hyperbolic",
-    "llamafile",
-    "mira",
-    "mistral",
-    "moonshot",
-    "ollama",
-    "openai",
-    "openrouter",
-    "perplexity",
-    "together",
-    "xai",
-]
+native = ["peon-core/native"]
+wasm = ["peon-core/wasm"]
