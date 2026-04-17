@@ -8,14 +8,17 @@
 //!
 //! # Setup
 //!
-//! Create a `.env` file with your API key (see `simple_chat.rs` for details).
+//! Create a `.env` file in `peon-runtime/` (see `.env.example`):
+//! ```text
+//! PROVIDER=openai
+//! MODEL=gpt-4o-mini
+//! API_KEY=sk-...
+//! ```
 //!
 //! # Run
 //!
 //! ```bash
-//! cargo run --example tool_call
-//! PROVIDER=anthropic cargo run --example tool_call
-//! PROVIDER=gemini cargo run --example tool_call
+//! cargo run -p peon-runtime --example tool_call
 //! ```
 
 use peon_runtime::providers::anthropic::AnthropicProvider;
@@ -55,7 +58,11 @@ impl PeonTool for WeatherTool {
         })
     }
 
-    fn call(&self, args: &str, ctx: &RequestContext) -> BoxFuture<'_, Result<String, ToolError>> {
+    fn call(
+        &self,
+        args: &str,
+        ctx: &RequestContext,
+    ) -> BoxFuture<'_, Result<String, ToolError>> {
         let args = args.to_string();
         let uid = ctx.uid().to_string();
         Box::pin(async move {
@@ -104,7 +111,11 @@ impl PeonTool for WhoAmITool {
         })
     }
 
-    fn call(&self, _args: &str, ctx: &RequestContext) -> BoxFuture<'_, Result<String, ToolError>> {
+    fn call(
+        &self,
+        _args: &str,
+        ctx: &RequestContext,
+    ) -> BoxFuture<'_, Result<String, ToolError>> {
         let uid = ctx.uid().to_string();
         let platform = ctx
             .get_metadata("platform")
@@ -118,43 +129,40 @@ impl PeonTool for WhoAmITool {
 }
 
 // ==========================================
-// Provider Factory (same as simple_chat)
+// Provider Factory
 // ==========================================
 
 fn create_provider() -> Box<dyn CompletionProvider> {
     dotenvy::dotenv().ok();
 
     let provider = std::env::var("PROVIDER").unwrap_or_else(|_| "openai".into());
+    let api_key = std::env::var("API_KEY").expect("API_KEY not set in .env");
 
     match provider.as_str() {
         "openai" => {
-            let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-            let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into());
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gpt-4o-mini".into());
             println!("Using OpenAI: {}", model);
-            Box::new(OpenAiProvider::new(model, key))
+            Box::new(OpenAiProvider::new(model, api_key))
         }
         "anthropic" => {
-            let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
-            let model = std::env::var("ANTHROPIC_MODEL")
-                .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+            let model =
+                std::env::var("MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
             println!("Using Anthropic: {}", model);
-            Box::new(AnthropicProvider::new(model, key))
+            Box::new(AnthropicProvider::new(model, api_key))
         }
         "gemini" => {
-            let key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY not set");
-            let model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-flash".into());
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gemini-2.5-flash".into());
             println!("Using Gemini: {}", model);
-            Box::new(GeminiProvider::new(model, key))
+            Box::new(GeminiProvider::new(model, api_key))
         }
         "openrouter" => {
-            let key = std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY not set");
-            let model = std::env::var("OPENROUTER_MODEL")
+            let model = std::env::var("MODEL")
                 .unwrap_or_else(|_| "anthropic/claude-sonnet-4-20250514".into());
             println!("Using OpenRouter: {}", model);
-            Box::new(OpenAiProvider::openrouter(model, key))
+            Box::new(OpenAiProvider::openrouter(model, api_key))
         }
         other => panic!(
-            "Unknown provider: {}. Use: openai, anthropic, gemini, openrouter",
+            "Unknown PROVIDER: '{}'. Supported: openai, anthropic, gemini, openrouter",
             other
         ),
     }
@@ -177,8 +185,8 @@ async fn main() {
         .max_turns(5)
         .build();
 
-    // Simulate a request from user "5797792592" on Telegram
-    let ctx = RequestContext::new("5797792592")
+    // Simulate a request from user "7444174610" on Telegram
+    let ctx = RequestContext::new("7444174610")
         .with_metadata("platform", "telegram")
         .with_metadata("chat_type", "private");
 

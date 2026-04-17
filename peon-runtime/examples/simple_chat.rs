@@ -2,28 +2,18 @@
 //!
 //! # Setup
 //!
-//! Create a `.env` file in the project root with one of:
+//! Create a `.env` file in `peon-runtime/` (see `.env.example`):
 //! ```text
-//! OPENAI_API_KEY=sk-...
-//! ANTHROPIC_API_KEY=sk-ant-...
-//! GEMINI_API_KEY=AIza...
-//! OPENROUTER_API_KEY=sk-or-...
+//! PROVIDER=openai
+//! MODEL=gpt-4o-mini
+//! API_KEY=sk-...
 //! ```
 //!
 //! # Run
 //!
 //! ```bash
-//! # OpenAI (default)
-//! cargo run --example simple_chat
-//!
-//! # Anthropic
-//! PROVIDER=anthropic cargo run --example simple_chat
-//!
-//! # Gemini
-//! PROVIDER=gemini cargo run --example simple_chat
-//!
-//! # OpenRouter
-//! PROVIDER=openrouter cargo run --example simple_chat
+//! cargo run -p peon-runtime --example simple_chat
+//! cargo run -p peon-runtime --example simple_chat -- "Tell me a joke"
 //! ```
 
 use peon_runtime::providers::anthropic::AnthropicProvider;
@@ -35,36 +25,33 @@ fn create_provider() -> Box<dyn CompletionProvider> {
     dotenvy::dotenv().ok();
 
     let provider = std::env::var("PROVIDER").unwrap_or_else(|_| "openai".into());
+    let api_key = std::env::var("API_KEY").expect("API_KEY not set in .env");
 
     match provider.as_str() {
         "openai" => {
-            let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-            let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into());
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gpt-4o-mini".into());
             println!("Using OpenAI: {}", model);
-            Box::new(OpenAiProvider::new(model, key))
+            Box::new(OpenAiProvider::new(model, api_key))
         }
         "anthropic" => {
-            let key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
-            let model = std::env::var("ANTHROPIC_MODEL")
-                .unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+            let model =
+                std::env::var("MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
             println!("Using Anthropic: {}", model);
-            Box::new(AnthropicProvider::new(model, key))
+            Box::new(AnthropicProvider::new(model, api_key))
         }
         "gemini" => {
-            let key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY not set");
-            let model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-flash".into());
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gemini-2.5-flash".into());
             println!("Using Gemini: {}", model);
-            Box::new(GeminiProvider::new(model, key))
+            Box::new(GeminiProvider::new(model, api_key))
         }
         "openrouter" => {
-            let key = std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY not set");
-            let model = std::env::var("OPENROUTER_MODEL")
+            let model = std::env::var("MODEL")
                 .unwrap_or_else(|_| "anthropic/claude-sonnet-4-20250514".into());
             println!("Using OpenRouter: {}", model);
-            Box::new(OpenAiProvider::openrouter(model, key))
+            Box::new(OpenAiProvider::openrouter(model, api_key))
         }
         other => panic!(
-            "Unknown provider: {}. Use: openai, anthropic, gemini, openrouter",
+            "Unknown PROVIDER: '{}'. Supported: openai, anthropic, gemini, openrouter",
             other
         ),
     }
