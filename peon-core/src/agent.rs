@@ -4,32 +4,85 @@
 //! and system prompt generation behind a single constructor.
 
 use crate::enforcer::{FileEnforcer, UserEnforcer};
-use crate::peon_model::PeonModel;
 use crate::scanner::{PeonEngine, generate_skills_xml, scan_skills};
 use crate::tools::{ExecuteScriptTool, ListAllSkillsTool, ReadFileTool, ReadSkillTool};
 
 use log::{debug, info};
-use rig::agent::Agent;
-use rig::completion::Prompt;
+use peon_runtime::providers::anthropic::AnthropicProvider;
+use peon_runtime::providers::gemini::GeminiProvider;
+use peon_runtime::providers::openai::OpenAiProvider;
+use peon_runtime::{AgentLoop, CompletionProvider, RequestContext};
 use std::sync::Arc;
 
-/// A builder to construct `PeonAgent` with custom tools and settings.
-pub struct PeonAgentBuilder<T = rig::agent::WithBuilderTools> {
-    builder: rig::agent::AgentBuilder<PeonModel, (), T>,
-    engine: Arc<PeonEngine>,
-    skills_xml: String,
+/// Create a `CompletionProvider` from environment variables.
+///
+/// Reads `PROVIDER`, `MODEL`, `API_KEY` from the process environment
+/// (typically loaded from `.env` via `dotenvy`).
+///
+/// # Supported providers
+///
+/// - `openai` (default)
+/// - `anthropic`
+/// - `gemini`
+/// - `openrouter`
+fn create_provider() -> Box<dyn CompletionProvider> {
+    let provider = std::env::var("PROVIDER").unwrap_or_else(|_| "openai".into());
+    let api_key = std::env::var("API_KEY").expect(
+        "API_KEY environment variable not set. \
+         Please set it in your .env file or shell environment.",
+    );
+
+    match provider.to_lowercase().as_str() {
+        "openai" => {
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gpt-4o-mini".into());
+            info!("Provider: OpenAI ({})", model);
+            Box::new(OpenAiProvider::new(model, api_key))
+        }
+        "anthropic" => {
+            let model =
+                std::env::var("MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".into());
+            info!("Provider: Anthropic ({})", model);
+            Box::new(AnthropicProvider::new(model, api_key))
+        }
+        "gemini" => {
+            let model = std::env::var("MODEL").unwrap_or_else(|_| "gemini-2.5-flash".into());
+            info!("Provider: Gemini ({})", model);
+            Box::new(GeminiProvider::new(model, api_key))
+        }
+        "openrouter" => {
+            let model = std::env::var("MODEL")
+                .unwrap_or_else(|_| "anthropic/claude-sonnet-4-20250514".into());
+            info!("Provider: OpenRouter ({})", model);
+            Box::new(OpenAiProvider::openrouter(model, api_key))
+        }
+        other => panic!(
+            "Unsupported PROVIDER: '{}'. Supported: openai, anthropic, gemini, openrouter",
+            other
+        ),
+    }
 }
 
-impl PeonAgentBuilder<rig::agent::NoToolConfig> {
+/// A builder to construct `PeonAgent` with custom tools and settings.
+pub struct PeonAgentBuilder {
+    provider: Box<dyn CompletionProvider>,
+    engine: Arc<PeonEngine>,
+    skills_xml: String,
+    system_prompt: Option<String>,
+    max_turns: usize,
+    tools: Vec<Box<dyn peon_runtime::PeonTool>>,
+}
+
+impl PeonAgentBuilder {
     /// Initialize the builder with zero-trust foundations from the environment.
-    pub async fn new() -> anyhow::Result<PeonAgentBuilder<rig::agent::WithBuilderTools>> {
-        Self::with_model(PeonModel::from_env()).await
+    ///
+    /// Reads `PROVIDER`, `MODEL`, `API_KEY` from env to create the provider.
+    /// Scans the skills directory and boots the Casbin enforcers.
+    pub async fn new() -> anyhow::Result<Self> {
+        Self::with_provider(create_provider()).await
     }
 
-    /// Internal: wire up scanning, engine, tools, but wait for prompt configuration.
-    pub async fn with_model(
-        model: PeonModel,
-    ) -> anyhow::Result<PeonAgentBuilder<rig::agent::WithBuilderTools>> {
+    /// Initialize with a custom provider (for testing or advanced use).
+    pub async fn with_provider(provider: Box<dyn CompletionProvider>) -> anyhow::Result<Self> {
         info!("🚀 Peon agent initializing foundations...");
 
         // Phase 1: Boot & Discovery
@@ -70,100 +123,90 @@ impl PeonAgentBuilder<rig::agent::NoToolConfig> {
         );
         let list_all_skills_tool = ListAllSkillsTool::new(Arc::clone(&skills));
 
-        // The builder initializes with NoToolConfig, and after calling `.tool()`,
-        // it upgrades its type state to `WithBuilderTools`.
-        let builder = model
-            .agent()
-            .default_max_turns(10)
-            .tool(read_skill_tool)
-            .tool(read_file_tool)
-            .tool(execute_script_tool)
-            .tool(list_all_skills_tool);
+        let tools: Vec<Box<dyn peon_runtime::PeonTool>> = vec![
+            Box::new(read_skill_tool),
+            Box::new(read_file_tool),
+            Box::new(execute_script_tool),
+            Box::new(list_all_skills_tool),
+        ];
 
         Ok(PeonAgentBuilder {
-            builder,
+            provider,
             engine,
             skills_xml,
+            system_prompt: None,
+            max_turns: 10,
+            tools,
         })
     }
-}
 
-impl PeonAgentBuilder<rig::agent::WithBuilderTools> {
     /// Apply the standard Peon system instructions, injecting the discovered skills XML catalog.
-    pub fn default_prompt(self) -> Self {
+    pub fn default_prompt(mut self) -> Self {
         let system_prompt = SYSTEM_PROMPT_TEMPLATE
             .replace("{skills}", &self.skills_xml)
             .replace("{custom_prompt}", "");
-        Self {
-            builder: self.builder.preamble(&system_prompt),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+        self.system_prompt = Some(system_prompt);
+        self
     }
 
     /// Apply the standard Peon system instructions, but append your own custom instructions 
     /// to the very end of the prompt.
-    pub fn append_system_prompt(self, custom_prompt: &str) -> Self {
+    pub fn append_system_prompt(mut self, custom_prompt: &str) -> Self {
         let system_prompt = SYSTEM_PROMPT_TEMPLATE
             .replace("{skills}", &self.skills_xml)
             .replace("{custom_prompt}", custom_prompt);
-        Self {
-            builder: self.builder.preamble(&system_prompt),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+        self.system_prompt = Some(system_prompt);
+        self
     }
 
     /// Completely replace the base system prompt template with your own string.
     /// Your template string **MUST** contain the `{skills}` placeholder to allow Peon 
     /// to inject the dynamically discovered capabilities XML. 
     /// You should also include `{custom_prompt}` if you intend to append custom data later.
-    pub fn custom_system_prompt(self, template: &str, custom_prompt: Option<&str>) -> Self {
+    pub fn custom_system_prompt(mut self, template: &str, custom_prompt: Option<&str>) -> Self {
         let system_prompt = template
             .replace("{skills}", &self.skills_xml)
             .replace("{custom_prompt}", custom_prompt.unwrap_or(""));
-        Self {
-            builder: self.builder.preamble(&system_prompt),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+        self.system_prompt = Some(system_prompt);
+        self
     }
 
     /// Provide a custom system prompt string or preamble.
-    pub fn preamble(self, preamble: &str) -> Self {
-        Self {
-            builder: self.builder.preamble(preamble),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+    pub fn preamble(mut self, preamble: &str) -> Self {
+        self.system_prompt = Some(preamble.to_string());
+        self
     }
 
     /// Set the default maximum number of chain-of-thought turns.
-    pub fn default_max_turns(self, turns: usize) -> Self {
-        Self {
-            builder: self.builder.default_max_turns(turns),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+    pub fn default_max_turns(mut self, turns: usize) -> Self {
+        self.max_turns = turns;
+        self
     }
 
     /// Add a custom tool to the agent.
-    pub fn tool<NewTool: rig::tool::Tool + 'static>(
-        self,
-        tool: NewTool,
-    ) -> PeonAgentBuilder<rig::agent::WithBuilderTools> {
-        PeonAgentBuilder {
-            builder: self.builder.tool(tool),
-            engine: self.engine,
-            skills_xml: self.skills_xml,
-        }
+    pub fn tool(mut self, tool: impl peon_runtime::PeonTool + 'static) -> Self {
+        self.tools.push(Box::new(tool));
+        self
     }
 
     /// Finalize and build the PeonAgent.
     pub fn build(self) -> PeonAgent {
         info!("Agent ready.");
+
+        let mut builder = AgentLoop::builder(self.provider);
+
+        if let Some(prompt) = self.system_prompt {
+            builder = builder.system_prompt(&prompt);
+        }
+
+        builder = builder.max_turns(self.max_turns);
+
+        for tool in self.tools {
+            builder = builder.tool_boxed(tool);
+        }
+
         PeonAgent {
-            agent: self.builder.build(),
+            agent: builder.build(),
             engine: self.engine,
         }
     }
@@ -178,11 +221,11 @@ impl PeonAgentBuilder<rig::agent::WithBuilderTools> {
 /// # Example
 /// ```rust,ignore
 /// let agent = PeonAgentBuilder::new().await?.default_prompt().build();
-/// let response = agent.prompt("Roll a 20-sided die").await?;
+/// let response = agent.prompt("Roll a 20-sided die", "user_123").await?;
 /// println!("{}", response);
 /// ```
 pub struct PeonAgent {
-    agent: Agent<PeonModel>,
+    agent: AgentLoop<Box<dyn CompletionProvider>>,
     engine: Arc<PeonEngine>,
 }
 
@@ -191,11 +234,17 @@ impl PeonAgent {
     ///
     /// The agent will autonomously discover skills, read instructions,
     /// and execute scripts as needed, all governed by the whitelist security model.
-    pub async fn prompt(&self, input: &str) -> anyhow::Result<String> {
-        info!("User input: {}", input);
-        let response = self.agent.prompt(input).await?;
-        info!("Agent response: {}", response);
-        Ok(response)
+    ///
+    /// # Arguments
+    /// - `input`: The user's message.
+    /// - `uid`: The user ID for zero-trust identity enforcement. This is passed
+    ///   directly to every tool call via `RequestContext` — it cannot be forged by the LLM.
+    pub async fn prompt(&self, input: &str, uid: &str) -> anyhow::Result<String> {
+        info!("User input (uid={}): {}", uid, input);
+        let ctx = RequestContext::new(uid);
+        let response = self.agent.run(input, &[], &ctx).await?;
+        info!("Agent response: {}", response.output);
+        Ok(response.output)
     }
 
     /// Reset the session, clearing all whitelists.
