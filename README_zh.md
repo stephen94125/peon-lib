@@ -6,11 +6,10 @@
 <br />
 ![GitHub top language](https://img.shields.io/github/languages/top/stephen94125/peon-lib)
 ![GitHub last commit](https://img.shields.io/github/last-commit/stephen94125/peon-lib)
+[![crates.io](https://img.shields.io/crates/v/peon-core.svg)](https://crates.io/crates/peon-core)
 [![License](https://img.shields.io/badge/License-MIT%20&%20Apache--2.0-green.svg)](https://opensource.org/licenses/MIT)
 
-<div align="center">
-<h4><code>Peon</code> 是一个企业级、基于零信任架构打造的自主 AI Agent 框架。</h4>
-</div>
+<h3>一个敢对 AI 说「不」的 Agent 框架。</h3>
 
 <p align="center">
   <a href="README.md">English</a> ·
@@ -19,80 +18,109 @@
 
 </div>
 
-[最新更新](#最新更新) •
-[背景与缘起](#背景与缘起) •
-[核心哲学](#核心哲学) •
-[安装说明](#安装说明) •
-[开发模块一览](#开发模块一览) •
-[使用与环境设定](#使用与环境设定) •
-[系统权限与安全模型](#系统权限与安全模型) •
-[开发者与贡献](#开发者与贡献)
+---
+
+**其他框架给 LLM 一个 Shell 然后祈祷。Peon 给 LLM 一条锁链，并且证明这条锁链真的有效。**
+
+大多数 Agent 框架（LangChain、AutoGPT、CrewAI）关注的是 AI _能做什么_。
+Peon 关注的是 AI _不能做什么_ —— 并且在架构层面强制执行，而非仰赖 Prompt 层面的祈祷。
+
+<div align="center">
+
+```
+用户 "3856588331" 发送: "帮我骰一个128面的骰子"
+
+✅ read_skill("roll-dice")        → 技能加载，路径解锁
+✅ execute_script("roll.sh", 128) → 白名单通过，执法器批准
+✅ Agent 回应: "你丢出 128 面骰的结果是：30"
+```
+
+```
+同一个机器人，不同用户（不在权限表内）:
+
+✅ read_skill("roll-dice")        → 技能加载...
+⛔ 全部权限拒绝                     → 路径根本没进入白名单
+⛔ execute_script("roll.sh", 128) → 安全违规：不在白名单中
+🤖 Agent 回应: "我无法执行该脚本 —— 权限被拒绝。"
+```
+
+**同一个机器人。同一份代码。同一个技能。不同用户 → 不同结果。**
+这就是零信任。
+
+</div>
 
 ---
 
-## 背景与缘起
+## ⚡ 实际运行画面
 
-自从 Autonomous Agents（自主代理）的浪潮崛起后，我们看到了**数量极为庞大**的 AI 框架（如 LangChain 或 AutoGPT）诞生，但它们往往是“盲目地”将操作系统的 Terminal 权限直接交给 LLM 去执行。
+以下是一个 Telegram 用户发送 `"帮我骰一个128面的骰子"` 时，Peon 驱动的机器人内部真实发生的事：
 
-这个技术演进无疑是激动人心的，但是 _直接给予 AI 毫无节制的 `bash` 执行能力，将严重限制它被部署到高敏感度的企业服务器环境中。_
+```log
+INFO  peon_telegram       Received message from chat ID 3856588331
+INFO  peon_core::agent    User input (uid=3856588331): 幫我骰一個128面的骰子
+INFO  peon_runtime::agent Agent run: uid='3856588331'
 
-<div align="center">
-<h4>换句话说，AI Agent 不只是面临“智力”层面的天花板，它更面临了<em>“信任与资安”</em>层面的巨大挑战。</h4>
-</div>
+# 第 1 轮: LLM 发现技能
+INFO  peon_runtime::agent Tool call: read_skill({"skill_name":"roll-dice"})
+INFO  peon_core::scanner  Added to execute whitelist: .../roll-dice/scripts/roll.sh
 
-**Peon 正是为了解决这个痛点而生。它首创将真实的 RBAC / ABAC (基于角色与属性) 的动态权限管理系统，最为深刻地整合进了 AI 的工具调用工作流 (Tool Execution Loop) 之中！**
+# 第 2 轮: LLM 使用已解锁的路径执行
+INFO  peon_runtime::agent Tool call: execute_script({"path":"...roll.sh","arguments":["128"]})
+INFO  peon_core::tools    Execute access granted for: .../roll-dice/scripts/roll.sh
 
-Peon 通过完全解耦“大脑推理层 (Reasoning Layer)”与“系统作业层 (Execution Layer)”实现了真正的 **纵深防御 (Defence in Depth)**。在 Peon 底下，LLM 绝对无法捏造一个未授权的 `rm -rf /` 指令。每一个工具的调用、每一次的文件读写、或者是脚本的运行，都必须经过极度严苛、立基于 Casbin 机制的安全矩阵进行核实。
-
-## 最新更新
-
-若想要进行深度探究，请前往各模块内部专属的文件夹查看更深度的细节（例如 `peon-core/README.md`）。
-
-## 导览列
-
-- [`Peon`](#peon)
-  - [背景与缘起](#背景与缘起)
-  - [最新更新](#最新更新)
-  - [核心哲学](#核心哲学)
-    - [“先证明，再触碰”法则](#先证明再触碰法则-prove-it-before-you-touch-it)
-  - [安装说明](#安装说明)
-  - [使用与环境设定](#使用与环境设定)
-    - [Peon CLI (终端机介面)](#peon-cli)
-    - [Peon Telegram (TG 机器人)](#peon-telegram)
-    - [Peon LINE (LINE 原生推送)](#peon-line)
-  - [我们的技能设计 (Skills)](#我们的技能设计-skills)
-  - [系统权限与安全模型](#系统权限与安全模型)
-  - [深度支援的 AI 模型厂商](#深度支援的-ai-模型厂商)
-
-## 核心哲学
-
-> 若缺乏了有效的控制限制，智慧并不叫自动化；它叫做一场灾难。
-
-我们深信 AI 的目的是拿来加速快速验证以及执行任务，但当我们跨入企业级的 AI 开发时，所有事情的出发点都必须是建立在代理人行为的 **安全性与可稽核性 (Auditability)** 之上。
-
-### 先证明，再触碰法则 (Prove it before you touch it)
-
-我们的框架将原本的指令层强硬分为两条绝不重疊的水管：
-
-1. **大脑系统 (`rig` / LLM 供应商)**: 最终下定论：“请替我在目标 Y 上执行 X 脚本”。
-2. **执法系统 (Casbin / PeonCore 核心)**: 拦截所有请求。用发话者的身份（Identity）去与文件系统中的“明确设定特权”做交互比对，计算并给出 `允许 (Allow)` 或 `拦截 (Deny)` 的结果。
-
-唯有两个系统完美的对齐一致，底层的内容与脚本才会真正的生效触发。
-
-## 安装说明
-
-### 环境准备
-
-欲由开源代码直接建置 Peon，请[确保你已经安装了 Rust 以及 Cargo 工具链](https://rustup.rs/)。
-
-```bash
-# 安装 Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# 第 3 轮: 完成。
+INFO  peon_runtime::agent Agent response (turn 3): 你丟出 128 面骰的結果是：30
 ```
 
-### 从源码开始编译
+现在只要改一行 `user_permissions.csv` —— 移除该用户的权限：
 
-下载整个工作区 (Workspace) 并编译项目：
+```log
+INFO  peon_core::tools    Tool call: read_skill('roll-dice')
+WARN  peon_core::scanner  All permissions denied for path 'roll.sh' — not added to any whitelist
+WARN  peon_core::tools    SECURITY VIOLATION: './scripts/roll.sh' not in execute whitelist — blocked
+INFO  peon_runtime::agent Agent response: "我这边目前无法执行骰子脚本 — 权限被拒绝。"
+```
+
+**LLM 重试了两次。它尝试了相对路径。它试了重新读取技能。全部无效。** 因为该路径在扫描层就被执法器拒绝了 —— 在执行层的两层之前。
+
+---
+
+## 🧠 运作原理
+
+```
+┌──────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│  LLM 大脑     │────▶│  Peon 安全矩阵        │────▶│  系统执行层       │
+│  (推理层)     │     │  (Casbin 执法引擎)    │     │  (脚本/文件)      │
+│              │     │                      │     │                  │
+│ "执行 X"     │     │ UID 验证? ✓          │     │ bash roll.sh 128 │
+│              │     │ 白名单? ✓            │     │                  │
+│              │     │ 文件 ACL? ✓          │     │ → stdout: "30"   │
+│              │     │ 用户 ACL? ✓          │     │                  │
+└──────────────┘     └──────────────────────┘     └──────────────────┘
+                        ▲ 任何一层不通过?
+                        │ → 拦截。句号。
+```
+
+**纵深防御，而非 Prompt 防御：**
+
+| 层级               | 功能                                                  | 防绕过?                          |
+| :----------------- | :---------------------------------------------------- | :------------------------------- |
+| **白名单**         | 仅 `SKILL.md` 中发现的路径可执行                      | ✅ LLM 无法凭空捏造路径          |
+| **文件 ACL**       | `file_permissions.txt` — 系统级拒绝/允许规则          | ✅ LLM 完全看不到这层            |
+| **用户 ACL**       | `user_permissions.csv` — 基于 Casbin 的 RBAC 身份管理 | ✅ UID 以物理方式注入，非 Prompt |
+| **RequestContext** | UID 是 Rust 结构体，非 task-local 或环境变量          | ✅ LLM 无法伪造                  |
+
+---
+
+## 📦 快速开始
+
+### 安装
+
+```bash
+cargo add peon-core
+```
+
+或从源码编译：
 
 ```bash
 git clone https://github.com/stephen94125/peon-lib.git
@@ -100,156 +128,130 @@ cd peon-lib
 cargo build --release
 ```
 
-编译出来的执行文件将都会顺利打包在 `./target/release/` 文件夹内。
-
-## 环境变数设定
-
-Peon 生态系被设计为以 Cargo Workspace 的方式管理。也因为每个子系统都具备不同的属性，**所以每一个单独的客户端项目都必须要独立设定一份专属的 `.env`。**
-
-你只需要进入想执行的模块文件夹内复制范例文件即可：
-
-```bash
-cd peon-cli
-cp .env.example .env
-```
-
-基础的配置参数长这样：
+### 配置
 
 ```dotenv
-# 模型与供应商
-PROVIDER=openai
-DEFAULT_MODEL=gpt-4o
-# OPENAI_API_KEY=sk-...
+# .env
+PROVIDER=openai          # openai | anthropic | gemini | openrouter
+MODEL=gpt-4o-mini
+API_KEY=sk-...
 
-# 核心安全策略引擎存放路径（必须为相对路径）
 PEON_SKILLS_DIR=skills
-PEON_FILE_PERMISSIONS_PATH=file_permissions.txt
-PEON_USER_PERMISSIONS_PATH=user_permissions.csv
+PEON_FILE_PERMISSIONS=file_permissions.txt
+PEON_USER_PERMISSIONS=user_permissions.csv
 ```
 
-## 开发模块一览
+### 运行
 
-Peon 被妥善的隔离出好几块不同的乐高积木模块，你可以根据自身的需求独立启动。
-
-| 模块名称            | 重心说明                                                                   |
-| :------------------ | :------------------------------------------------------------------------- |
-| **`peon-core`**     | 核心安全引擎，模型供应商底层串接，API 设计                                 |
-| **`peon-cli`**      | 主攻标准 Unix I/O 流，适合搭配 `cat` 以及 CI/CD 管线测试                   |
-| **`peon-telegram`** | Long-polling 服务器，适合做多人群组助理                                    |
-| **`peon-line`**     | 整合了 Axum 的服务器接口，专注于手机端的原生地图、视频与图片等丰富介面推送 |
-
-## 使用与环境设定
-
-当你欲使用的那个根目录设定好专属你的 `.env` 以后，启动就变成极其简单的事。
-
-### Peon CLI
-
-`peon-cli` 用起来就像一个好用的标准 GNU 指令工具，你可以通过旗标 (`-m`) 与标准输入 (`stdin`) 喂给它背景知识。
-
-```bash
-# 基础问答
-cargo run -p peon-cli -- -m "如何在 linux 内做一个基础网络路由排错？"
-
-# 将大段文档做 Pipeline 给到模型分析 (stdin)
-cat /var/log/syslog | cargo run -p peon-cli -- -m "替我解析这串日志内部有没有因为内存造成的崩溃问题。"
+```rust
+let agent = PeonAgentBuilder::new().await?.default_prompt().build();
+let response = agent.prompt("骰一个20面骰", "user_123").await?;
+// UID "user_123" 被物理传递到每一个工具调用中。
+// LLM 无法伪造、覆盖或提权。句号。
 ```
 
-当你指定 `RUST_LOG=debug` 时，你可以清楚看见这个零信任防护网，是如何一层一层解析路径、调度判断并批准指令的！
+---
 
-### Peon Telegram
+## 🧩 工作区模块
 
-想要在私信或是群组拥有一个完全原生的 TG Assistant？
-打开 `peon-telegram/.env`，输入你的 BotFather Token：
+| 模块                                  | crates.io                                                                                                 | 用途                                                 |
+| :------------------------------------ | :-------------------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
+| **[`peon-runtime`](peon-runtime/)**   | [![crates.io](https://img.shields.io/crates/v/peon-runtime.svg)](https://crates.io/crates/peon-runtime)   | 自研 LLM 运行时 — 供应商抽象、Agent 循环、多模态消息 |
+| **[`peon-core`](peon-core/)**         | [![crates.io](https://img.shields.io/crates/v/peon-core.svg)](https://crates.io/crates/peon-core)         | 零信任引擎 — 技能扫描器、Casbin 执法器、工具沙箱     |
+| **[`peon-cli`](peon-cli/)**           | [![crates.io](https://img.shields.io/crates/v/peon-cli.svg)](https://crates.io/crates/peon-cli)           | Unix 风格 CLI — 支持 stdin 管道，可用于 CI/CD        |
+| **[`peon-telegram`](peon-telegram/)** | [![crates.io](https://img.shields.io/crates/v/peon-telegram.svg)](https://crates.io/crates/peon-telegram) | 多用户 Telegram 机器人，每用户身份隔离               |
 
-```dotenv
-TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
+---
+
+## 🛡️ 安全模型
+
+> [!WARNING]
+> **严格零信任**: Peon 要求 `file_permissions.txt` 和 `user_permissions.csv` 必须存在。如果缺失，Agent 将**直接 Panic 拒绝启动** —— 没有静默降级，没有默认全开。
+
+**`file_permissions.txt`** — Agent 能碰什么：
+
+```text
+x, ./skills/*         # 允许执行 skills 内的脚本
+!x, /bin/rm           # 永远封锁 rm，没有例外
+r, ./data/*           # 允许读取数据文件
+!r, ./secrets/*       # 封锁 secrets 目录
 ```
 
-然后发动引擎服务器：
+**`user_permissions.csv`** — 谁能做什么：
 
-```bash
-cargo run -p peon-telegram
+```csv
+p, *, *, *, allow                  # 全员放行（开发模式）
+p, 3856588331, *, execute, allow   # 只有此 Telegram 用户可执行
+p, admin_role, *, *, allow         # 角色级权限
+g, alice, admin_role               # Alice 继承 admin 权限
 ```
 
-### Peon LINE
+---
 
-专门设计给终端用户、最高细节质量的 LINE 官方机器人引擎。采用 `axum` 动态绑定 Webhook。突破了官方恼人的 `reply_message` 全盘批次送出限制，给予模型自己决定的“渐进式”异步回应。让 AI 能亲自对用户传送地址定位点、语音录音与庆祝贴图。
+## 🔧 技能系统
 
-打开 `peon-line/.env`，放入金钥：
+技能是 **定义 LLM 被允许做什么的 Markdown 文件** —— 不仅仅是它能做什么。
 
-```dotenv
-LINE_CHANNEL_SECRET=your_secret
-LINE_CHANNEL_ACCESS_TOKEN=your_token
 ```
-
-```bash
-cargo run -p peon-line
+skills/
+└── roll-dice/
+    ├── SKILL.md           # 指令 + 路径声明
+    └── scripts/
+        └── roll.sh        # 实际可执行文件
 ```
-
-机器人预设会监听 `0.0.0.0:3000/callback`，测试时可以搭配 `ngrok` 作使用。
-
-## 我们的技能设计 (Skills)
-
-Peon 的 _技能 (Skills)_ 系统截然不同于一般项目简单敷衍的 function call 打包。
-
-我们采用在 `skills/SKILL.md` 内部撰写类 `Markdown/XML` 的方式（请注意：系統預設讀取的是 **`./skills`** 而非 `./.skills`），用纯粹的简体中文或英文来叙做工具描述（Prompt 指令），大幅增加 LLM 的理解能力。
-
-架构举例如下：
 
 ```markdown
 ---
-name: network_scanner
-description: Executes Nmap on a target subnet.
+name: roll-dice
+description: 使用随机数生成器骰骰子。
 ---
 
-当使用者发出要求需要检查网络区段的请求，请一定要调用这个工具与底下的核心 `scan.sh` 来分析。记得加上过滤层的参数 `--safe`。
+要骰骰子，执行: `./scripts/roll.sh <面数>`
 ```
 
-这其中所有的复杂转换皆会被 Peon 给隐藏。框架会在服务刚建立的时候扫描这个环境，将安全网织好，动态赋予 LLM 新的特权，甚至连服务器都不需要重开！
+当 `read_skill("roll-dice")` 被调用时，Peon 会：
 
-## 系统权限与安全模型
+1. 读取 SKILL.md 内容
+2. 提取所有引用的路径（`./scripts/roll.sh`）
+3. 通过 `canonicalize()` 解析为绝对路径
+4. 对每个路径执行执法器检查
+5. 仅通过白名单 + 执法器双重认证的路径才会被加入
 
-若文件权限或身分角色没有被事先记录在 Casbin 设定表中，任何 LLM 所发起的行为都将遭无情封锁。
+**LLM 永远看不到文件系统。它只能看到 Peon 明确解锁的内容。**
 
-> [!WARNING]
-> **强硬零信任机制**: Peon 预设会在当前执行目录 (`./`) 下寻找 `file_permissions.txt` 与 `user_permissions.csv`。若找不到这些文件，Agent 将会**直接 Panic 拒绝启动**，以确保系统不会在无权限控制的情况下裸奔。
->
-> 您可以通过以下环境变数来手动指定这些文件的路径：
->
-> - `PEON_FILE_PERMISSIONS_PATH`: 物理路径权限表位置。
-> - `PEON_USER_PERMISSIONS_PATH`: 身分角色权限表位置。
+---
 
-**1. `file_permissions.txt`** (黑白名单防护机制)
+## 🗺️ 路线图
 
-```text
-# 允许模型执行任何包裹在 skills 里面的可执行文件
-# (系統預設會從 ./skills/* 讀取權限)
-x, ./skills/*
-# 以最高顺位强硬阻止触碰一切有关 rm 的危险行为
-!x, /bin/rm
-```
+| 状态 | 功能                                                                          |
+| :--- | :---------------------------------------------------------------------------- |
+| ✅   | 双层执法的零信任工具执行                                                      |
+| ✅   | 自研 LLM 运行时（`peon-runtime`）— 支持 OpenAI、Anthropic、Gemini、OpenRouter |
+| ✅   | Telegram 机器人，每用户身份隔离                                               |
+| ✅   | 技能发现、动态白名单、会话重置                                                |
+| 🔜   | **Telegram**: 富文本回应 — 图片、文件、格式化消息                             |
+| 🔜   | **Telegram**: 多模态输入 — 照片、语音、文档                                   |
+| 🔜   | **Discord**: 机器人集成                                                       |
+| 🔜   | **CLI**: 端到端验证                                                           |
+| 🗓️   | WASM 运行时支持，用于浏览器端 Agent                                           |
+| 🗓️   | 跨会话持久化对话记忆                                                          |
 
-**2. `user_permissions.csv`** (身份管理与分配)
+---
 
-```csv
-# 把原生的 'agent' 身份丢给名为 system_admin 的虚拟角色
-g, agent, system_admin
-# 作为系统管理员，拥有无节制的行为判定能力
-p, system_admin, *, *, allow
-```
+## 🤝 支持的供应商
 
-Peon 的底层核心将会默默地将每一次的方法与系统接触拦截至此，作比對後放行。
+Peon 使用自研运行时（`peon-runtime`），原生支持：
 
-## 深度支援的 AI 模型厂商
+**OpenAI** · **Anthropic** · **Gemini** · **OpenRouter**（接入 200+ 模型）
 
-所有的多模型分发介面都已经由 Peon 替各位妥善处理，使用者在绝大多数时间内都只需要更改 `PROVIDER` 取代模型。包含下列各大最夯的厂商：
+---
 
-Anthropic · Azure · Cohere · Deepseek · Gemini · Groq · Huggingface · Hyperbolic · Llamafile · Mira · Mistral · Moonshot · Ollama · OpenAI · OpenRouter · Perplexity · Together · xAI
-
-## 开发者与贡献
+## 📄 开发者与贡献
 
 <a href="https://github.com/stephen94125/peon-lib/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=stephen94125/peon-lib" alt="contrib.rocks" />
 </a>
 
 本贡献看板由 [contrib.rocks](https://contrib.rocks) 所产生。
+
+授权协议：[MIT](LICENSE-MIT) 或 [Apache-2.0](LICENSE-APACHE)。

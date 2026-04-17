@@ -6,11 +6,10 @@
 <br />
 ![GitHub top language](https://img.shields.io/github/languages/top/stephen94125/peon-lib)
 ![GitHub last commit](https://img.shields.io/github/last-commit/stephen94125/peon-lib)
+[![crates.io](https://img.shields.io/crates/v/peon-core.svg)](https://crates.io/crates/peon-core)
 [![License](https://img.shields.io/badge/License-MIT%20&%20Apache--2.0-green.svg)](https://opensource.org/licenses/MIT)
 
-<div align="center">
-<h4><code>Peon</code> is an enterprise-grade, zero-trust framework for autonomous AI Agents.</h4>
-</div>
+<h3>The AI agent framework that says <em>no</em>.</h3>
 
 <p align="center">
   <strong>English</strong> ·
@@ -19,81 +18,109 @@
 
 </div>
 
-[Updates](#updates) •
-[What and Why](#what-and-why) •
-[Philosophy](#philosophy) •
-[Installation](#installation) •
-[Workspace Crates](#workspace-crates) •
-[Usage & Environments](#usage--environments) •
-[Skill Development](#skill-development) •
-[Security Models](#security-models) •
-[Meta](#meta)
+---
+
+**Other frameworks give LLMs a shell and pray. Peon gives LLMs a leash and proves it works.**
+
+Most agent frameworks (LangChain, AutoGPT, CrewAI) focus on _what_ an AI can do.
+Peon focuses on _what it cannot_ — and enforces that at the architecture level, not the prompt level.
+
+<div align="center">
+
+```
+User "3856588331" sends: "Roll a 128-sided die"
+
+✅ read_skill("roll-dice")        → Skill loaded, paths unlocked
+✅ execute_script("roll.sh", 128) → Whitelist check passed, enforcer approved
+✅ Agent response: "You rolled **30** on a d128!"
+```
+
+```
+Same bot, different user (not in policy):
+
+✅ read_skill("roll-dice")        → Skill loaded...
+⛔ ALL PERMISSIONS DENIED          → Path never entered whitelist
+⛔ execute_script("roll.sh", 128) → SECURITY VIOLATION: not in whitelist
+🤖 Agent response: "I cannot execute this script — permission denied."
+```
+
+**Same bot. Same code. Same skill. Different user → different outcome.**
+That's zero-trust.
+
+</div>
 
 ---
 
-## What and why
+## ⚡ See It In Action
 
-Since the explosive rise of autonomous agents, we've seen an **_extraordinary_** number of frameworks (like LangChain or AutoGPT) that blindly give LLMs access to terminal sandboxes.
+Here's what actually happens when a Telegram user sends `"Roll a 128-sided die"` to a Peon-powered bot:
 
-It's all really exciting and powerful, but _giving an AI unrestricted `bash` execution limits its applicability in secure production environments._
+```log
+INFO  peon_telegram       Received message from chat ID 3856588331
+INFO  peon_core::agent    User input (uid=3856588331): 幫我骰一個128面的骰子
+INFO  peon_runtime::agent Agent run: uid='3856588331'
 
-<div align="center">
-<h4>In other words, AI agents don't just have an intelligence problem—they have a <em>trust and security</em> problem.</h4>
-</div>
+# Turn 1: LLM discovers the skill
+INFO  peon_runtime::agent Tool call: read_skill({"skill_name":"roll-dice"})
+INFO  peon_core::scanner  Added to execute whitelist: .../roll-dice/scripts/roll.sh
 
-**Peon was created to address this by introducing the concept of true RBAC/ABAC (Role and Attribute Based Access Control) deeply integrated into the AI tool execution loop.**
+# Turn 2: LLM executes with the unlocked path
+INFO  peon_runtime::agent Tool call: execute_script({"path":"...roll.sh","arguments":["128"]})
+INFO  peon_core::tools    Execute access granted for: .../roll-dice/scripts/roll.sh
 
-Peon achieves true **Defence in Depth** by decoupling the reasoning/intelligence layer from the operating system execution layer. In Peon, an LLM cannot hallucinate an arbitrary `rm -rf /` command. Every tool execution, file read, and network request must pass through a strict, Casbin-enforced security matrix.
-
-## Updates
-
-For a deep dive into Peon and its internals, read the documentation located within our specific module folders (`peon-core/README.md`).
-
-## Navigation
-
-- [`Peon`](#peon)
-  - [What and why](#what-and-why)
-  - [Updates](#updates)
-  - [Philosophy](#philosophy)
-    - [Prove it before you touch it](#prove-it-before-you-touch-it)
-  - [Installation](#installation)
-  - [Usage & Environments](#usage--environments)
-    - [Peon CLI](#peon-cli)
-    - [Peon Telegram](#peon-telegram)
-    - [Peon LINE](#peon-line)
-  - [Our approach to Skills](#our-approach-to-skills)
-  - [Security Models](#security-models)
-  - [Supported AI Providers](#supported-ai-providers)
-
-## Philosophy
-
-> Intelligence without control isn't automation; it's a liability.
-
-We believe the purpose of AI is to rapidly prototype and execute tasks, but when we deal with Enterprise AI, we must start with the **security and auditability** of the agent's actions.
-
-### Prove it before you touch it
-
-Our approach breaks down agent execution into two disjoint pipelines:
-
-1. **The Brain (`rig` / LLM)**: Decides to "execute script X on target Y".
-2. **The Enforcer (Casbin / PeonCore)**: Intercepts the request. Evaluates the executing user's identity against the target's explicit file permissions to decide if it `Allows` or `Denies` the call.
-
-Only when both systems align can the underlying operating system be invoked.
-
-## Installation
-
-### Prerequisites
-
-To install Peon from source, [make sure Rust and Cargo are installed](https://rustup.rs/).
-
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Turn 3: Done.
+INFO  peon_runtime::agent Agent response (turn 3): 你丟出 128 面骰的結果是：30
 ```
 
-### From Source
+Now change one line in `user_permissions.csv` — remove the user's access:
 
-Clone the workspace and build the framework locally.
+```log
+INFO  peon_core::tools    Tool call: read_skill('roll-dice')
+WARN  peon_core::scanner  All permissions denied for path 'roll.sh' — not added to any whitelist
+WARN  peon_core::tools    SECURITY VIOLATION: './scripts/roll.sh' not in execute whitelist — blocked
+INFO  peon_runtime::agent Agent response: "I cannot execute this script — permission denied."
+```
+
+**The LLM retried twice. It tried relative paths. It tried re-reading the skill. Nothing worked.** The path was never whitelisted because the enforcer rejected the user identity at the scan layer — two layers before execution.
+
+---
+
+## 🧠 How It Works
+
+```
+┌──────────────┐     ┌────────────────────┐     ┌──────────────────┐
+│   LLM Brain  │────▶│  Peon Security     │────▶│  OS Execution    │
+│  (Reasoning) │     │  Matrix (Casbin)   │     │  (Scripts/Files) │
+│              │     │                    │     │                  │
+│ "Execute X"  │     │ UID? ✓            │     │ bash roll.sh 128 │
+│              │     │ Whitelist? ✓       │     │                  │
+│              │     │ File ACL? ✓        │     │ → stdout: "30"   │
+│              │     │ User ACL? ✓        │     │                  │
+└──────────────┘     └────────────────────┘     └──────────────────┘
+                        ▲ Fails ANY check?
+                        │ → Blocked. Period.
+```
+
+**Defence in Depth, not Defence by Prompt:**
+
+| Layer              | What                                                        | Bypass-proof?                              |
+| :----------------- | :---------------------------------------------------------- | :----------------------------------------- |
+| **Whitelist**      | Only paths discovered from `SKILL.md` are executable        | ✅ LLM cannot invent paths                 |
+| **File ACL**       | `file_permissions.txt` — system-wide deny/allow rules       | ✅ Not visible to LLM                      |
+| **User ACL**       | `user_permissions.csv` — per-user RBAC via Casbin           | ✅ UID injected physically, not via prompt |
+| **RequestContext** | UID is passed as a Rust struct, not a task-local or env var | ✅ Unforgeable by the LLM                  |
+
+---
+
+## 📦 Quick Start
+
+### Install
+
+```bash
+cargo add peon-core
+```
+
+Or from source:
 
 ```bash
 git clone https://github.com/stephen94125/peon-lib.git
@@ -101,158 +128,130 @@ cd peon-lib
 cargo build --release
 ```
 
-All compiled binaries will be located in `./target/release/`.
-
-### Environment Variables & Setup
-
-Peon supports multiple client applications natively within its Cargo Workspace. However, **each client MUST have its own `.env` file** to run.
-
-You can initialize a project by copying the `.env.example` in each folder:
-
-```bash
-cd peon-cli
-cp .env.example .env
-```
-
-A base configuration looks like this:
+### Configure
 
 ```dotenv
-# Provider and Model
-PROVIDER=openai
-DEFAULT_MODEL=gpt-4o
-# OPENAI_API_KEY=sk-...
+# .env
+PROVIDER=openai          # openai | anthropic | gemini | openrouter
+MODEL=gpt-4o-mini
+API_KEY=sk-...
 
-# Policy Contexts (Requires relative paths)
 PEON_SKILLS_DIR=skills
-PEON_FILE_PERMISSIONS_PATH=file_permissions.txt
-PEON_USER_PERMISSIONS_PATH=user_permissions.csv
+PEON_FILE_PERMISSIONS=file_permissions.txt
+PEON_USER_PERMISSIONS=user_permissions.csv
 ```
 
-## Workspace Crates
+### Run
 
-Peon is fundamentally divided into separated modules depending on the interface you wish to expose.
-
-| Component           | Focus                                          |
-| :------------------ | :--------------------------------------------- |
-| **`peon-core`**     | Libraries, Security Engine, Integrations       |
-| **`peon-cli`**      | Unix Standard I/O, Scripts, DevOps             |
-| **`peon-telegram`** | Long-polling chat, collaborative bots          |
-| **`peon-line`**     | Axum Webhooks, Rich UI media (locations/audio) |
-
-## Usage & Environments
-
-Once your `.env` is configured across the crates you desire, here is how you leverage them.
-
-### Peon CLI
-
-`peon-cli` acts like standard GNU utilities. You can pass instructions via flags or standard input.
-
-```bash
-# Basic chat request
-cargo run -p peon-cli -- -m "How do I securely route a network?"
-
-# Utilizing standard pipes (stdin) to provide context
-cat /var/log/syslog | cargo run -p peon-cli -- -m "Find the out of memory panics in this log."
+```rust
+let agent = PeonAgentBuilder::new().await?.default_prompt().build();
+let response = agent.prompt("Roll a 20-sided die", "user_123").await?;
+// The UID "user_123" is physically passed to every tool call.
+// The LLM cannot forge, override, or escalate it. Period.
 ```
 
-If you specify `RUST_LOG=debug`, you will see exactly how Peon is scanning its skills list and enforcing Casbin access dynamically.
+---
 
-### Peon Telegram
+## 🧩 Workspace Crates
 
-A native multi-user solution built with `teloxide`.
-Add the following to your `peon-telegram/.env`:
+| Crate                                 | crates.io                                                                                                 | Purpose                                                                    |
+| :------------------------------------ | :-------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| **[`peon-runtime`](peon-runtime/)**   | [![crates.io](https://img.shields.io/crates/v/peon-runtime.svg)](https://crates.io/crates/peon-runtime)   | Custom LLM runtime — provider abstraction, agent loop, multimodal messages |
+| **[`peon-core`](peon-core/)**         | [![crates.io](https://img.shields.io/crates/v/peon-core.svg)](https://crates.io/crates/peon-core)         | Zero-trust engine — skill scanner, Casbin enforcers, tool sandboxing       |
+| **[`peon-cli`](peon-cli/)**           | [![crates.io](https://img.shields.io/crates/v/peon-cli.svg)](https://crates.io/crates/peon-cli)           | Unix-style CLI — pipe stdin, use in CI/CD                                  |
+| **[`peon-telegram`](peon-telegram/)** | [![crates.io](https://img.shields.io/crates/v/peon-telegram.svg)](https://crates.io/crates/peon-telegram) | Multi-user Telegram bot with per-user identity isolation                   |
 
-```dotenv
-TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
+---
+
+## 🛡️ Security Model
+
+> [!WARNING]
+> **Strict Zero-Trust**: Peon requires `file_permissions.txt` and `user_permissions.csv` to exist. If missing, the agent **panics on startup** — no silent fallback, no "allow-all" default.
+
+**`file_permissions.txt`** — What the agent can touch:
+
+```text
+x, ./skills/*         # Allow execution within skills
+!x, /bin/rm           # Block rm, always, no exceptions
+r, ./data/*           # Allow reading data files
+!r, ./secrets/*       # Block reading secrets
 ```
 
-Then launch the daemon:
+**`user_permissions.csv`** — Who can do what:
 
-```bash
-cargo run -p peon-telegram
+```csv
+p, *, *, *, allow                  # Allow everyone (development mode)
+p, 3856588331, *, execute, allow   # Only this Telegram user can execute
+p, admin_role, *, *, allow         # Role-based access
+g, alice, admin_role               # Alice inherits admin permissions
 ```
 
-The agent maintains distinct persistent sessions for each User ID that interacts with it.
+---
 
-### Peon LINE
+## 🔧 Skills System
 
-A high-fidelity media integration designed for consumer-facing systems, utilizing `axum`. Peon hooks into the native messaging systems to send push-based UI elements, decoupling the traditional limitations of single-batch reply tokens.
+Skills are **Markdown files that define what an LLM is allowed to do** — not just what it _can_ do.
 
-Set the following in `peon-line/.env`:
-
-```dotenv
-LINE_CHANNEL_SECRET=your_secret
-LINE_CHANNEL_ACCESS_TOKEN=your_token
 ```
-
-```bash
-cargo run -p peon-line
+skills/
+└── roll-dice/
+    ├── SKILL.md           # Instructions + path declarations
+    └── scripts/
+        └── roll.sh        # The actual executable
 ```
-
-This runs an HTTP server on `0.0.0.0:3000/callback` out-of-the-box. Ensure you utilize `ngrok` or similar to expose this locally to LINE.
-
-## Our approach to Skills
-
-Peon _Skills_ are slightly different than typical generic tool definitions.
-
-We use structured `Markdown/XML` logic inside a `skills/SKILL.md` file (Note: the default directory is **`./skills`**, not `./.skills`) to explicitly define both the _metadata_ of a script and the _LLM instructions_.
-
-Here's an example of the philosophy:
 
 ```markdown
 ---
-name: network_scanner
-description: Executes Nmap on a target subnet.
+name: roll-dice
+description: Roll dice using a random number generator.
 ---
 
-When the user asks about network topology, parse the subnet and execute the sibling script `scan.sh`. Ensure you append `--safe` to the args.
+To roll a die, execute: `./scripts/roll.sh <sides>`
 ```
 
-Peon completely abstracts this structure, parsing it during bootstrapping, routing the security checks, and dynamically giving the LLM an `execute_skill` tool mapped physically to `scan.sh`.
+When `read_skill("roll-dice")` is called, Peon:
 
-## Security Models
+1. Reads the SKILL.md content
+2. Extracts all referenced paths (`./scripts/roll.sh`)
+3. Resolves them to absolute paths via `canonicalize()`
+4. Checks the enforcer for each path
+5. Only whitelisted + enforcer-approved paths get added
 
-No skill execution is allowed unless the user and file paths are cross-referenced with your root Casbin setup.
+**The LLM never sees the filesystem. It only sees what Peon explicitly unlocks.**
 
-> [!WARNING]
-> **Strict Zero-Trust**: Peon requires both `file_permissions.txt` and `user_permissions.csv` to exist in your current working directory (`./`) by default. If these files are missing, the agent will **fail to start (Panic)** to prevent insecure execution.
->
-> You can override these paths using environment variables:
->
-> - `PEON_FILE_PERMISSIONS_PATH`: Custom path for file ACLs.
-> - `PEON_USER_PERMISSIONS_PATH`: Custom path for user/role ACLs.
+---
 
-**1. `file_permissions.txt`** (Denylist / Root ACL)
+## 🗺️ Roadmap
 
-```text
-# Give the agent access to execute scripts inside our skills folder
-# (System default reads from ./skills/*)
-x, ./skills/*
-# Deny it from ever executing rm
-!x, /bin/rm
-```
+| Status | Feature                                                                     |
+| :----- | :-------------------------------------------------------------------------- |
+| ✅     | Zero-trust tool execution with dual-layer enforcement                       |
+| ✅     | Custom LLM runtime (`peon-runtime`) — OpenAI, Anthropic, Gemini, OpenRouter |
+| ✅     | Telegram bot with per-user identity isolation                               |
+| ✅     | Skill discovery, dynamic whitelisting, session reset                        |
+| 🔜     | **Telegram**: Rich responses — images, files, formatted messages            |
+| 🔜     | **Telegram**: Multimodal input — photos, voice, documents                   |
+| 🔜     | **Discord**: Bot integration                                                |
+| 🔜     | **CLI**: End-to-end verification with real API providers                    |
+| 🗓️     | WASM runtime support for browser-based agents                               |
+| 🗓️     | Persistent conversation memory across sessions                              |
 
-**2. `user_permissions.csv`** (Identity & Role ACL)
+---
 
-```csv
-# Assign the generic 'agent' user the sysadmin role
-g, agent, system_admin
-# System admins are permitted everything
-p, system_admin, *, *, allow
-```
+## 🤝 Supported Providers
 
-Peon automatically intercepts every LLM function call to validate against these tables natively.
+Peon uses its own runtime (`peon-runtime`) with native support for:
 
-## Supported AI Providers
+**OpenAI** · **Anthropic** · **Gemini** · **OpenRouter** (access to 200+ models)
 
-Peon supports a unified interface over almost any modern AI provider without changing your code, directly through `PROVIDER`:
+---
 
-Anthropic · Azure · Cohere · Deepseek · Gemini · Groq · Huggingface · Hyperbolic · Llamafile · Mira · Mistral · Moonshot · Ollama · OpenAI · OpenRouter · Perplexity · Together · xAI
-
-## Meta
+## 📄 Meta
 
 <a href="https://github.com/stephen94125/peon-lib/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=stephen94125/peon-lib" alt="contrib.rocks" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
+
+Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).

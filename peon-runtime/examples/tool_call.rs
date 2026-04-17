@@ -58,11 +58,7 @@ impl PeonTool for WeatherTool {
         })
     }
 
-    fn call(
-        &self,
-        args: &str,
-        ctx: &RequestContext,
-    ) -> BoxFuture<'_, Result<String, ToolError>> {
+    fn call(&self, args: &str, ctx: &RequestContext) -> BoxFuture<'_, Result<String, ToolError>> {
         let args = args.to_string();
         let uid = ctx.uid().to_string();
         Box::pin(async move {
@@ -111,11 +107,7 @@ impl PeonTool for WhoAmITool {
         })
     }
 
-    fn call(
-        &self,
-        _args: &str,
-        ctx: &RequestContext,
-    ) -> BoxFuture<'_, Result<String, ToolError>> {
+    fn call(&self, _args: &str, ctx: &RequestContext) -> BoxFuture<'_, Result<String, ToolError>> {
         let uid = ctx.uid().to_string();
         let platform = ctx
             .get_metadata("platform")
@@ -185,8 +177,8 @@ async fn main() {
         .max_turns(5)
         .build();
 
-    // Simulate a request from user "7444174610" on Telegram
-    let ctx = RequestContext::new("7444174610")
+    // Simulate a request from user "3856588331" on Telegram
+    let ctx = RequestContext::new("3856588331")
         .with_metadata("platform", "telegram")
         .with_metadata("chat_type", "private");
 
