@@ -23,6 +23,9 @@
 > [!TIP]
 > 系統預設會從 **`./skills`** 目錄（而非 `./.skills`）讀取技能資訊。請確保您的技能資料夾路徑正確，或透過環境變數指定。
 
+> [!WARNING]
+> 机器人需要目录下的 `file_permissions.txt` 与 `user_permissions.csv` 才能启动。您也可以透过环境变量自定义位置。
+
 3. 运行！
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram

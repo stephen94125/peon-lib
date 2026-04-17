@@ -27,6 +27,9 @@ Ensure you export API keys to your environment, or create a `.env` in the direct
 > [!IMPORTANT]
 > By default, Peon scans for skills in the **`./skills`** directory (not `./.skills`). This can be customized via the `PEON_SKILLS_DIR` environment variable.
 
+> [!WARNING]
+> The CLI requires `file_permissions.txt` and `user_permissions.csv` to be present in its execution directory. You can override these using `PEON_FILE_PERMISSIONS` and `PEON_USER_PERMISSIONS`.
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 export DEFAULT_PROVIDER="openai"

@@ -4,7 +4,7 @@
 
 **Peon Core** is the zero-trust engine driving the Peon workspace. It ensures that any AI agent instantiated through our framework is physically powerless to access or execute scripts without explicit authorization.
 
-For deep-dive architecture details on *how* our dual-layer sandboxing and dynamic whitelisting system works, please read our [Security Architecture Handbook](docs/security_architecture.md).
+For deep-dive architecture details on _how_ our dual-layer sandboxing and dynamic whitelisting system works, please read our [Security Architecture Handbook](docs/security_architecture.md).
 
 ---
 
@@ -47,26 +47,36 @@ RUST_LOG=debug cargo run -p peon-core --example simple_agent
 
 ## 🔐 Advanced Permission Management (Casbin)
 
-Security in Peon Core isn't hardcoded; it relies on the industry-standard [Casbin Authorization Library](https://casbin.org/). Casbin provides an incredibly powerful way to enforce Role-Based Access Control (RBAC) and Attribute-Based Access Control (ABAC). 
+Security in Peon Core isn't hardcoded; it relies on the industry-standard [Casbin Authorization Library](https://casbin.org/). Casbin provides an incredibly powerful way to enforce Role-Based Access Control (RBAC) and Attribute-Based Access Control (ABAC).
 
 For a detailed understanding of how to write complex policies, we highly recommend reading the [Casbin Official Syntax Documentation](https://casbin.org/docs/how-it-works).
+
+> [!WARNING]
+> **Strict Enforcement**: Peon looks for permission files in your current working directory (`./`) by default. If they are missing, the engine will **Panic on startup**. 
+>
+> You can override these locations via environment variables:
+> - `PEON_FILE_PERMISSIONS`: Custom path for file ACLs.
+> - `PEON_USER_PERMISSIONS`: Custom path for user/role ACLs.
 
 There are two primary permission axes you must configure for your Agent:
 
 ### 1. File & Path Permissions (`file_permissions.txt`)
+
 File permissions authorize or reject access to physical paths on your operating system, acting as a global denylist against LLM actions.
 
 **Setup:**
 Copy the provided example to get started mapping your paths:
+
 ```bash
 cp file_permissions_example.txt file_permissions.txt
 ```
 
 **Formatting Rules:**
 The enforcer utilizes a **Deny-Override** logic. The fields are defined as `action, target_path`.
-* `r`: Read access
-* `x`: Execute script access
-* `!r` / `!x`: Explicitly **Deny** access (Highest priority)
+
+- `r`: Read access
+- `x`: Execute script access
+- `!r` / `!x`: Explicitly **Deny** access (Highest priority)
 
 ```text
 # Allow the agent to execute any script within the skills directory
@@ -78,10 +88,11 @@ x, ./skills/*
 ```
 
 ### 2. Personnel Permissions (`user_permissions.csv`)
-Personnel permissions dictate *who* is communicating with the agent, assigning them roles or restricting capabilities based on User IDs.
+
+Personnel permissions dictate _who_ is communicating with the agent, assigning them roles or restricting capabilities based on User IDs.
 
 **Setup:**
-Peon Core natively looks for `user_permissions.csv` in your root environment. 
+Peon Core natively looks for `user_permissions.csv` in your root environment.
 
 **Formatting Rules:**
 These policies define who can interact with what using Casbin's core syntax: `p, user, resource, action, effect`.
@@ -103,9 +114,9 @@ g, Bob, standard_users
 
 ---
 
-## 🛠 Logging 
+## 🛠 Logging
 
-Because Peon abstracts security entirely, debugging paths is essential. 
+Because Peon abstracts security entirely, debugging paths is essential.
 Change the `RUST_LOG` environment variable to filter output:
 
 - `RUST_LOG=info` - Standard agent responses and high-level tool calls.

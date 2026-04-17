@@ -35,7 +35,7 @@
 
 Since the explosive rise of autonomous agents, we've seen an **_extraordinary_** number of frameworks (like LangChain or AutoGPT) that blindly give LLMs access to terminal sandboxes.
 
-It's all really exciting and powerful, but _giving an AI unrestricted `bash` execution limits its applicability in secure production environments._ 
+It's all really exciting and powerful, but _giving an AI unrestricted `bash` execution limits its applicability in secure production environments._
 
 <div align="center">
 <h4>In other words, AI agents don't just have an intelligence problem—they have a <em>trust and security</em> problem.</h4>
@@ -67,13 +67,14 @@ For a deep dive into Peon and its internals, read the documentation located with
 
 ## Philosophy
 
-> Intelligence without control isn't automation; it's a liability. 
+> Intelligence without control isn't automation; it's a liability.
 
 We believe the purpose of AI is to rapidly prototype and execute tasks, but when we deal with Enterprise AI, we must start with the **security and auditability** of the agent's actions.
 
 ### Prove it before you touch it
 
 Our approach breaks down agent execution into two disjoint pipelines:
+
 1. **The Brain (`rig` / LLM)**: Decides to "execute script X on target Y".
 2. **The Enforcer (Casbin / PeonCore)**: Intercepts the request. Evaluates the executing user's identity against the target's explicit file permissions to decide if it `Allows` or `Denies` the call.
 
@@ -131,12 +132,12 @@ PEON_USER_PERMISSIONS=user_permissions.csv
 
 Peon is fundamentally divided into separated modules depending on the interface you wish to expose.
 
-| Component | Focus |
-| :--- | :--- |
-| **`peon-core`** | Libraries, Security Engine, Integrations |
-| **`peon-cli`** | Unix Standard I/O, Scripts, DevOps |
-| **`peon-telegram`** | Long-polling chat, collaborative bots |
-| **`peon-line`** | Axum Webhooks, Rich UI media (locations/audio) |
+| Component           | Focus                                          |
+| :------------------ | :--------------------------------------------- |
+| **`peon-core`**     | Libraries, Security Engine, Integrations       |
+| **`peon-cli`**      | Unix Standard I/O, Scripts, DevOps             |
+| **`peon-telegram`** | Long-polling chat, collaborative bots          |
+| **`peon-line`**     | Axum Webhooks, Rich UI media (locations/audio) |
 
 ## Usage & Environments
 
@@ -160,14 +161,17 @@ If you specify `RUST_LOG=debug`, you will see exactly how Peon is scanning its s
 
 A native multi-user solution built with `teloxide`.
 Add the following to your `peon-telegram/.env`:
+
 ```dotenv
 TELOXIDE_TOKEN="123456789:ABCdefGHIjklmNoPQRsTuvwxyZ"
 ```
 
 Then launch the daemon:
+
 ```bash
 cargo run -p peon-telegram
 ```
+
 The agent maintains distinct persistent sessions for each User ID that interacts with it.
 
 ### Peon LINE
@@ -175,6 +179,7 @@ The agent maintains distinct persistent sessions for each User ID that interacts
 A high-fidelity media integration designed for consumer-facing systems, utilizing `axum`. Peon hooks into the native messaging systems to send push-based UI elements, decoupling the traditional limitations of single-batch reply tokens.
 
 Set the following in `peon-line/.env`:
+
 ```dotenv
 LINE_CHANNEL_SECRET=your_secret
 LINE_CHANNEL_ACCESS_TOKEN=your_token
@@ -183,15 +188,17 @@ LINE_CHANNEL_ACCESS_TOKEN=your_token
 ```bash
 cargo run -p peon-line
 ```
+
 This runs an HTTP server on `0.0.0.0:3000/callback` out-of-the-box. Ensure you utilize `ngrok` or similar to expose this locally to LINE.
 
 ## Our approach to Skills
 
-Peon _Skills_ are slightly different than typical generic tool definitions. 
+Peon _Skills_ are slightly different than typical generic tool definitions.
 
-We use structured `Markdown/XML` logic inside a `skills/SKILL.md` file (Note: the default directory is **`./skills`**, not `./.skills`) to explicitly define both the *metadata* of a script and the *LLM instructions*.
+We use structured `Markdown/XML` logic inside a `skills/SKILL.md` file (Note: the default directory is **`./skills`**, not `./.skills`) to explicitly define both the _metadata_ of a script and the _LLM instructions_.
 
 Here's an example of the philosophy:
+
 ```markdown
 ---
 name: network_scanner
@@ -207,7 +214,15 @@ Peon completely abstracts this structure, parsing it during bootstrapping, routi
 
 No skill execution is allowed unless the user and file paths are cross-referenced with your root Casbin setup.
 
+> [!WARNING]
+> **Strict Zero-Trust**: Peon requires both `file_permissions.txt` and `user_permissions.csv` to exist in your current working directory (`./`) by default. If these files are missing, the agent will **fail to start (Panic)** to prevent insecure execution.
+>
+> You can override these paths using environment variables:
+> - `PEON_FILE_PERMISSIONS`: Custom path for file ACLs.
+> - `PEON_USER_PERMISSIONS`: Custom path for user/role ACLs.
+
 **1. `file_permissions.txt`** (Denylist / Root ACL)
+
 ```text
 # Give the agent access to execute scripts inside our skills folder
 # (System default reads from ./skills/*)
@@ -217,6 +232,7 @@ x, ./skills/*
 ```
 
 **2. `user_permissions.csv`** (Identity & Role ACL)
+
 ```csv
 # Assign the generic 'agent' user the sysadmin role
 g, agent, system_admin
@@ -238,4 +254,4 @@ Anthropic · Azure · Cohere · Deepseek · Gemini · Groq · Huggingface · Hyp
   <img src="https://contrib.rocks/image?repo=stephen94125/peon-lib" alt="contrib.rocks" />
 </a>
 
-Made with [contrib.rocks](https://contrib.rocks). 
+Made with [contrib.rocks](https://contrib.rocks).

@@ -23,6 +23,9 @@ To turn your isolated local agent into a live Telegram bot, follow these steps:
 > [!TIP]
 > Peon searches for skills in the **`./skills`** directory by default (not `./.skills`). Ensure your skills are placed there or set `PEON_SKILLS_DIR`.
 
+> [!WARNING]
+> Permission files (`file_permissions.txt` & `user_permissions.csv`) are required in the working directory. Override via `PEON_FILE_PERMISSIONS` and `PEON_USER_PERMISSIONS` if needed.
+
 3. Run the bot!
    ```bash
    RUST_LOG=info cargo run --release -p peon-telegram
