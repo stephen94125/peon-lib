@@ -57,7 +57,7 @@ Here's what actually happens when a Telegram user sends `"Roll a 128-sided die"`
 
 ```log
 INFO  peon_telegram       Received message from chat ID 3856588331
-INFO  peon_core::agent    User input (uid=3856588331): 幫我骰一個128面的骰子
+INFO  peon_core::agent    User input (uid=3856588331): Roll a 128-sided die for me
 INFO  peon_runtime::agent Agent run: uid='3856588331'
 
 # Turn 1: LLM discovers the skill
@@ -69,7 +69,7 @@ INFO  peon_runtime::agent Tool call: execute_script({"path":"...roll.sh","argume
 INFO  peon_core::tools    Execute access granted for: .../roll-dice/scripts/roll.sh
 
 # Turn 3: Done.
-INFO  peon_runtime::agent Agent response (turn 3): 你丟出 128 面骰的結果是：30
+INFO  peon_runtime::agent Agent response (turn 3): You rolled a **30** on the 128-sided die.
 ```
 
 Now change one line in `user_permissions.csv` — remove the user's access:
