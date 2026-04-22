@@ -370,9 +370,7 @@ fn parse_anthropic_response(raw: AnthropicResponse) -> Result<CompletionResponse
     for block in raw.content {
         match block {
             AnthropicContent::Text { text } => {
-                if !text.is_empty() {
-                    content.push(AssistantContent::Text { text });
-                }
+                content.push(AssistantContent::Text { text });
             }
             AnthropicContent::ToolUse { id, name, input } => {
                 // Anthropic sends input as a JSON object; we serialize to string
@@ -390,12 +388,6 @@ fn parse_anthropic_response(raw: AnthropicResponse) -> Result<CompletionResponse
                 // Skip redacted thinking blocks
             }
         }
-    }
-
-    if content.is_empty() {
-        return Err(CompletionError::ParseError(
-            "Anthropic response contained no content blocks".into(),
-        ));
     }
 
     let usage = Some(Usage {

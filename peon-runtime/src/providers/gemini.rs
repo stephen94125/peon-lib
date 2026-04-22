@@ -467,9 +467,7 @@ fn parse_gemini_response(raw: GeminiResponse) -> Result<CompletionResponse, Comp
         }
 
         if let Some(text) = part.text {
-            if !text.is_empty() {
-                content.push(AssistantContent::Text { text });
-            }
+            content.push(AssistantContent::Text { text });
         } else if let Some(fc) = part.function_call {
             let name = fc
                 .get("name")
@@ -496,12 +494,6 @@ fn parse_gemini_response(raw: GeminiResponse) -> Result<CompletionResponse, Comp
             });
         }
         // inline_data and function_response are for input, not output
-    }
-
-    if content.is_empty() {
-        return Err(CompletionError::ParseError(
-            "Gemini response contained no text or function calls".into(),
-        ));
     }
 
     let usage = raw.usage_metadata.map(|u| Usage {

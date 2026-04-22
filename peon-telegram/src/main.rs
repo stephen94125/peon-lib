@@ -159,7 +159,9 @@ async fn handle_message(
     }
 
     // ── Send the final text response ─────────────────────────────────────────
-    bot.send_message(chat_id, response.output).await?;
+    if !response.output.trim().is_empty() {
+        bot.send_message(chat_id, response.output).await?;
+    }
     Ok(())
 }
 
@@ -240,7 +242,7 @@ async fn extract_content(bot: &Bot, msg: &TgMessage) -> Result<Vec<ContentPart>>
             }
             parts.push(ContentPart::Audio {
                 data: to_base64(&bytes),
-                format: "ogg".into(),
+                format: "wav".into(),
             });
             Ok(parts)
         }
@@ -254,7 +256,7 @@ async fn extract_content(bot: &Bot, msg: &TgMessage) -> Result<Vec<ContentPart>>
                 .map(|mt| mt.to_string())
                 .unwrap_or_else(|| "audio/mpeg".into());
             let format = if mime.contains("ogg") {
-                "ogg"
+                "wav"
             } else if mime.contains("wav") {
                 "wav"
             } else {

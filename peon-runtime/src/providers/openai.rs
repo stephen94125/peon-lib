@@ -446,9 +446,7 @@ fn parse_openai_response(raw: OpenAiResponse) -> Result<CompletionResponse, Comp
 
     // Text content
     if let Some(text) = choice.message.content {
-        if !text.is_empty() {
-            content.push(AssistantContent::Text { text });
-        }
+        content.push(AssistantContent::Text { text });
     }
 
     // Tool calls
@@ -483,11 +481,7 @@ fn parse_openai_response(raw: OpenAiResponse) -> Result<CompletionResponse, Comp
         }
     }
 
-    if content.is_empty() {
-        return Err(CompletionError::ParseError(
-            "Response contained neither text nor tool calls".into(),
-        ));
-    }
+
 
     let usage = raw.usage.map(|u| Usage {
         input_tokens: u.prompt_tokens,

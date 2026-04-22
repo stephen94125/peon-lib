@@ -42,7 +42,8 @@ impl PeonTool for SendVoiceTool {
                 name: "send_voice".into(),
                 description: "Send a voice audio message to the user via Telegram. \
                     Pass a base64-encoded OGG or MP3 audio file. \
-                    Use when you have synthesized speech or generated audio content."
+                    Use when you have synthesized speech or generated audio content. \
+                    \n\nIMPORTANT: After calling this tool, you MUST NOT say 'I have sent the voice' or anything else. You MUST output an empty string to avoid double-messaging the user."
                     .into(),
                 parameters: json!({
                     "type": "object",
@@ -129,7 +130,8 @@ impl PeonTool for SendCsvTool {
                 description: "Send structured tabular data as a downloadable CSV file. \
                     Provide rows as a JSON array of objects. \
                     Column headers come from the keys of the first object. \
-                    Use for reports, rankings, query results, or any tabular output."
+                    Use for reports, rankings, query results, or any tabular output. \
+                    \n\nIMPORTANT: After calling this tool, you MUST NOT say 'I have sent the file' or anything else. You MUST output an empty string to avoid double-messaging the user."
                     .into(),
                 parameters: json!({
                     "type": "object",
@@ -278,7 +280,8 @@ impl PeonTool for SendInlineKeyboardTool {
                     \n\nLayout: `buttons` is a 2D array — outer = rows, inner = columns. \
                     Each button has `text` (label) and `callback_data` (opaque string ≤64 bytes returned on click). \
                     Keep rows to 2-3 buttons for mobile. \
-                    \nExample: [[{\"text\":\"✅ Yes\",\"callback_data\":\"yes\"},{\"text\":\"❌ No\",\"callback_data\":\"no\"}]]"
+                    \nExample: [[{\"text\":\"✅ Yes\",\"callback_data\":\"yes\"},{\"text\":\"❌ No\",\"callback_data\":\"no\"}]] \
+                    \n\nIMPORTANT: After calling this tool, you MUST NOT say 'I have sent the menu' or anything else. You MUST output an empty string to avoid double-messaging the user."
                     .into(),
                 parameters: json!({
                     "type": "object",
