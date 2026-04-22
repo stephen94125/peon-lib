@@ -1,6 +1,6 @@
 [package]
 name = "peon-runtime"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A runtime-agnostic agent execution engine with zero-trust context injection, multimodal messaging, and pluggable LLM providers."

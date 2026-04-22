@@ -275,6 +275,21 @@ impl Message {
     }
 }
 
+// ==========================================
+// Conversions
+// ==========================================
+
+impl From<Vec<ContentPart>> for Message {
+    /// Build a `Message::User` from a list of content parts.
+    ///
+    /// This allows multimodal inputs to be passed directly anywhere
+    /// a `Message` or `impl Into<Message>` is expected, unifying
+    /// the text-only and multimodal call paths.
+    fn from(parts: Vec<ContentPart>) -> Self {
+        Message::user(parts)
+    }
+}
+
 impl ContentPart {
     /// Shorthand for text content.
     pub fn text(s: impl Into<String>) -> Self {
