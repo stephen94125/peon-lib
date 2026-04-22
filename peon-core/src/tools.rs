@@ -144,7 +144,7 @@ impl PeonTool for ReadFileTool {
             drop(guard);
 
             let enum_values: serde_json::Value = if paths.is_empty() {
-                serde_json::json!([""])
+                serde_json::json!(["NO_PATHS_AVAILABLE"])
             } else {
                 serde_json::json!(paths)
             };
@@ -297,7 +297,7 @@ impl PeonTool for ExecuteScriptTool {
             drop(guard);
 
             let enum_values: serde_json::Value = if paths.is_empty() {
-                serde_json::json!([""])
+                serde_json::json!(["NO_PATHS_AVAILABLE"])
             } else {
                 serde_json::json!(paths)
             };
