@@ -21,7 +21,9 @@
 
 use crate::error::CompletionError;
 use crate::message::{AssistantContent, ContentPart, Message};
-use crate::provider::{BoxFuture, CompletionProvider, CompletionRequest, CompletionResponse, Usage};
+use crate::provider::{
+    BoxFuture, CompletionProvider, CompletionRequest, CompletionResponse, Usage,
+};
 use log::debug;
 use serde::Deserialize;
 
@@ -115,7 +117,8 @@ impl GeminiProvider {
                         "description": t.description,
                     });
                     // Gemini quirk: omit empty parameters entirely
-                    let is_empty = t.parameters == serde_json::json!({"type": "object", "properties": {}})
+                    let is_empty = t.parameters
+                        == serde_json::json!({"type": "object", "properties": {}})
                         || t.parameters == serde_json::json!({});
                     if !is_empty {
                         decl["parameters"] = t.parameters.clone();
@@ -166,7 +169,10 @@ impl CompletionProvider for GeminiProvider {
                 self.base_url, self.model, self.api_key
             );
 
-            debug!("Gemini request: {}", serde_json::to_string_pretty(&body).unwrap_or_default());
+            debug!(
+                "Gemini request: {}",
+                serde_json::to_string_pretty(&body).unwrap_or_default()
+            );
 
             let resp = self
                 .client
@@ -234,7 +240,7 @@ struct GeminiPart {
     text: Option<String>,
     // Function call
     #[serde(default)]
-    function_call: Option<GeminiFunctionCall>,
+    function_call: Option<serde_json::Value>,
     // Function response (for history)
     #[serde(default)]
     function_response: Option<GeminiFunctionResponse>,
@@ -244,12 +250,9 @@ struct GeminiPart {
     // Whether this is a thought/thinking part
     #[serde(default)]
     thought: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiFunctionCall {
-    name: String,
-    args: serde_json::Value,
+    // Opaque signature for the thought, required by Gemini 2.0+
+    #[serde(default, rename = "thoughtSignature")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,7 +332,9 @@ fn convert_message_to_gemini(msg: &Message) -> Option<serde_json::Value> {
                             "data": data,
                         }
                     }),
-                    ContentPart::File { data, media_type, .. } => serde_json::json!({
+                    ContentPart::File {
+                        data, media_type, ..
+                    } => serde_json::json!({
                         "inlineData": {
                             "mimeType": media_type,
                             "data": data,
@@ -349,15 +354,36 @@ fn convert_message_to_gemini(msg: &Message) -> Option<serde_json::Value> {
                 .iter()
                 .map(|part| match part {
                     AssistantContent::Text { text } => serde_json::json!({ "text": text }),
-                    AssistantContent::ToolCall { name, arguments, .. } => {
-                        let args: serde_json::Value = serde_json::from_str(arguments)
-                            .unwrap_or_else(|_| serde_json::json!({}));
-                        serde_json::json!({
-                            "functionCall": {
+                    AssistantContent::ToolCall {
+                        id: packed_id,
+                        name,
+                        arguments,
+                        ..
+                    } => {
+                        let mut part_json = serde_json::json!({});
+                        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(packed_id) {
+                            if let Some(fc) = meta.get("functionCall") {
+                                part_json["functionCall"] = fc.clone();
+                            } else {
+                                let args: serde_json::Value = serde_json::from_str(arguments)
+                                    .unwrap_or_else(|_| serde_json::json!({}));
+                                part_json["functionCall"] = serde_json::json!({
+                                    "name": name,
+                                    "args": args,
+                                });
+                            }
+                            if let Some(ts) = meta.get("thoughtSignature") {
+                                part_json["thoughtSignature"] = ts.clone();
+                            }
+                        } else {
+                            let args: serde_json::Value = serde_json::from_str(arguments)
+                                .unwrap_or_else(|_| serde_json::json!({}));
+                            part_json["functionCall"] = serde_json::json!({
                                 "name": name,
                                 "args": args,
-                            }
-                        })
+                            });
+                        }
+                        part_json
                     }
                 })
                 .collect();
@@ -369,20 +395,38 @@ fn convert_message_to_gemini(msg: &Message) -> Option<serde_json::Value> {
         }
 
         // Gemini: tool results are sent as user messages with functionResponse parts
-        Message::ToolResult { tool_call_id, content } => {
-            // Gemini doesn't use tool_call_id the same way — it uses the function name.
-            // The AgentLoop passes the tool_call_id which is the function name from Gemini
-            // (since Gemini doesn't generate separate IDs for function calls).
+        Message::ToolResult {
+            tool_call_id,
+            content,
+        } => {
             let response_value: serde_json::Value = serde_json::from_str(content)
                 .unwrap_or_else(|_| serde_json::json!({ "result": content }));
+
+            let mut function_response = serde_json::json!({
+                "response": response_value,
+            });
+
+            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(tool_call_id) {
+                if let Some(fc) = meta.get("functionCall") {
+                    if let Some(name) = fc.get("name").and_then(|v| v.as_str()) {
+                        function_response["name"] = serde_json::json!(name);
+                    } else {
+                        function_response["name"] = serde_json::json!(tool_call_id);
+                    }
+                    if let Some(fid) = fc.get("id").filter(|v| !v.is_null()) {
+                        function_response["id"] = fid.clone();
+                    }
+                } else {
+                    function_response["name"] = serde_json::json!(tool_call_id);
+                }
+            } else {
+                function_response["name"] = serde_json::json!(tool_call_id);
+            }
 
             Some(serde_json::json!({
                 "role": "user",
                 "parts": [{
-                    "functionResponse": {
-                        "name": tool_call_id,
-                        "response": response_value,
-                    }
+                    "functionResponse": function_response
                 }],
             }))
         }
@@ -394,19 +438,15 @@ fn convert_message_to_gemini(msg: &Message) -> Option<serde_json::Value> {
 // ==========================================
 
 fn parse_gemini_response(raw: GeminiResponse) -> Result<CompletionResponse, CompletionError> {
-    let candidate = raw.candidates.into_iter().next().ok_or_else(|| {
-        CompletionError::ParseError("No response candidates".into())
-    })?;
+    let candidate = raw
+        .candidates
+        .into_iter()
+        .next()
+        .ok_or_else(|| CompletionError::ParseError("No response candidates".into()))?;
 
     let gemini_content = candidate.content.ok_or_else(|| {
-        let reason = candidate
-            .finish_reason
-            .as_deref()
-            .unwrap_or("unknown");
-        let message = candidate
-            .finish_message
-            .as_deref()
-            .unwrap_or("no message");
+        let reason = candidate.finish_reason.as_deref().unwrap_or("unknown");
+        let message = candidate.finish_message.as_deref().unwrap_or("no message");
         CompletionError::ParseError(format!(
             "Gemini candidate missing content (finish_reason={}, message={})",
             reason, message
@@ -431,12 +471,27 @@ fn parse_gemini_response(raw: GeminiResponse) -> Result<CompletionResponse, Comp
                 content.push(AssistantContent::Text { text });
             }
         } else if let Some(fc) = part.function_call {
-            // Gemini doesn't generate separate IDs for function calls.
-            // We use the function name as the ID (same pattern rig uses).
-            let arguments = serde_json::to_string(&fc.args).unwrap_or_default();
+            let name = fc
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let empty_args = serde_json::json!({});
+            let args = fc.get("args").unwrap_or(&empty_args);
+            let arguments = serde_json::to_string(args).unwrap_or_default();
+
+            // Encode the entire functionCall json object into the id field so we can perfectly reconstruct it
+            let mut meta = serde_json::json!({
+                "functionCall": fc,
+            });
+            if let Some(ts) = part.thought_signature {
+                meta["thoughtSignature"] = serde_json::json!(ts);
+            }
+            let packed_id = serde_json::to_string(&meta).unwrap_or_default();
+
             content.push(AssistantContent::ToolCall {
-                id: fc.name.clone(),
-                name: fc.name,
+                id: packed_id,
+                name,
                 arguments,
             });
         }
