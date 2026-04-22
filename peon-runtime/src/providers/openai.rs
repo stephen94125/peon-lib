@@ -248,6 +248,8 @@ struct OpenAiMessage {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<OpenAiToolCall>>,
+    #[serde(default)]
+    phase: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -366,6 +368,7 @@ fn convert_message_to_openai(msg: &Message) -> serde_json::Value {
         Message::Assistant { content } => {
             let mut text_parts = Vec::new();
             let mut tool_calls = Vec::new();
+            let mut phase: Option<serde_json::Value> = None;
 
             for part in content {
                 match part {
@@ -375,8 +378,17 @@ fn convert_message_to_openai(msg: &Message) -> serde_json::Value {
                         name,
                         arguments,
                     } => {
+                        let actual_id = if let Ok(meta) = serde_json::from_str::<serde_json::Value>(id) {
+                            if let Some(p) = meta.get("phase") {
+                                phase = Some(p.clone());
+                            }
+                            meta.get("id").and_then(|v| v.as_str()).unwrap_or(id).to_string()
+                        } else {
+                            id.clone()
+                        };
+
                         tool_calls.push(serde_json::json!({
-                            "id": id,
+                            "id": actual_id,
                             "type": "function",
                             "function": {
                                 "name": name,
@@ -394,17 +406,28 @@ fn convert_message_to_openai(msg: &Message) -> serde_json::Value {
             if !tool_calls.is_empty() {
                 msg["tool_calls"] = serde_json::Value::Array(tool_calls);
             }
+            if let Some(p) = phase {
+                msg["phase"] = p;
+            }
             msg
         }
 
         Message::ToolResult {
             tool_call_id,
             content,
-        } => serde_json::json!({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": content,
-        }),
+        } => {
+            let actual_id = if let Ok(meta) = serde_json::from_str::<serde_json::Value>(tool_call_id) {
+                meta.get("id").and_then(|v| v.as_str()).unwrap_or(tool_call_id).to_string()
+            } else {
+                tool_call_id.clone()
+            };
+
+            serde_json::json!({
+                "role": "tool",
+                "tool_call_id": actual_id,
+                "content": content,
+            })
+        }
     }
 }
 
@@ -430,16 +453,30 @@ fn parse_openai_response(raw: OpenAiResponse) -> Result<CompletionResponse, Comp
 
     // Tool calls
     if let Some(tool_calls) = choice.message.tool_calls {
+        let phase = choice.message.phase;
+        let mut first = true;
+
         for tc in tool_calls {
-            // Normalize arguments: if it's already a string, use as-is.
-            // If it's a JSON object/value, serialize to string.
             let arguments = match &tc.function.arguments {
                 serde_json::Value::String(s) => s.clone(),
                 other => serde_json::to_string(other).unwrap_or_default(),
             };
 
+            let mut meta = serde_json::json!({
+                "id": tc.id,
+            });
+
+            if first {
+                if let Some(p) = &phase {
+                    meta["phase"] = p.clone();
+                }
+                first = false;
+            }
+
+            let packed_id = serde_json::to_string(&meta).unwrap_or_default();
+
             content.push(AssistantContent::ToolCall {
-                id: tc.id,
+                id: packed_id,
                 name: tc.function.name,
                 arguments,
             });
