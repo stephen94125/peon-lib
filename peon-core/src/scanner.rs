@@ -498,6 +498,25 @@ impl PeonEngine {
         info!("Session reset — all whitelists cleared");
     }
 
+    /// Creates an independent deep copy of this engine's session state.
+    ///
+    /// The `FileEnforcer` and `UserEnforcer` are Arc-cloned (shared, read-only static policy).
+    /// The `read_paths` and `execute_paths` HashSets are **copied by value** into
+    /// new `Arc<RwLock<_>>` instances so the snapshot is fully independent.
+    ///
+    /// Used to snapshot a per-chat session before each agent run in the
+    /// last-write-wins concurrency model.
+    pub async fn deep_clone(&self) -> Self {
+        let read_snap = self.read_paths.read().await.clone();
+        let execute_snap = self.execute_paths.read().await.clone();
+        Self {
+            file_enforcer: Arc::clone(&self.file_enforcer),
+            user_enforcer: Arc::clone(&self.user_enforcer),
+            read_paths: Arc::new(RwLock::new(read_snap)),
+            execute_paths: Arc::new(RwLock::new(execute_snap)),
+        }
+    }
+
     /// Generates the dynamic Tool JSON Schema array for the current turn.
     /// This is kept for reference/testing — in production the tools read directly
     /// from the shared `Arc<RwLock>` in their own `definition()` methods.

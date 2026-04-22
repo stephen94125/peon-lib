@@ -1,6 +1,6 @@
 [package]
 name = "peon-core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "The zero-trust engine driving the Peon workspace, providing dual-layer sandboxing and dynamic Casbin whitelisting."
@@ -11,7 +11,7 @@ name = "peon_core"
 path = "src/lib.rs"
 
 [dependencies]
-peon-runtime = { version="0.1.1" }
+peon-runtime = { version="0.1.2" }
 anyhow = "1.0.98"
 log = "0.4"
 thiserror = "2"

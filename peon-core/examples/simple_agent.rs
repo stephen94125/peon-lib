@@ -19,8 +19,8 @@ async fn main() -> anyhow::Result<()> {
     log::info!("User input: {}", user_input);
 
     // The UID is now explicitly passed — no more CURRENT_UID.scope() magic!
-    let response = agent.prompt(user_input, "agent").await?;
-    log::info!("Agent response: {}", response);
+    let (response, _session) = agent.prompt(user_input, "agent").await?;
+    log::info!("Agent response: {}", response.output);
 
     Ok(())
 }
