@@ -1,0 +1,3 @@
+display_name: Gemini API Docs
+short_description: Official Protobuf specs and definitions for the Gemini API.
+default_prompt: Review the Gemini API protobuf definitions to answer my question.
