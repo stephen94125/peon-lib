@@ -58,13 +58,13 @@ async fn main() -> Result<()> {
     // 5. Prompt Agent — UID is now explicitly passed, not via CURRENT_UID.scope()
     log::info!("Dispatching prompt to agent...");
     log::debug!("Prompt payload length: {} characters", input.len());
-    let response = agent
-        .prompt(&input, "agent")
+    let (response, _session) = agent
+        .prompt(input, "agent")
         .await
         .context("Agent execution failed")?;
 
     // 6. Return purely to STDOUT
-    println!("{}", response);
+    println!("{}", response.output);
 
     Ok(())
 }
